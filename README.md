@@ -4,7 +4,17 @@
 
 ## 데모
 
+![demo](https://anlab-assault.com/wp-content/uploads/2026/01/KakaoTalk_Video_2026-01-20-18-22-03-online-video-cutter.com_.gif)
+
 - 로컬 실행: 아래 설치/실행 절차 참고
+
+### Key Feature
+- 법조문, 사내 문서, 협조 공문 등으로부터 준수해야할 Compliance Set 추출
+- Multi Agent를 활용한 소스코드의 Compliance 준수 사항 점검
+  - Ochestrator: 모든 Agent 작업을 추적하는 메인 Agent
+  - Validator: 코드가 특정 Comliance Item을 준수하는지 확인하고, 수정이 필요한 피드백을 생성하는 Agent
+  - Reporter: Validator들이 생성한 검수 결과를 취합하여 보고서 형태로 정리하는 Agent
+- 검수 결과 리포트
 
 ## 문제 정의
 
@@ -14,6 +24,8 @@
 
 Kompline은 코드·로그·데이터 등 기업 산출물을 상시 스캔해 규정 준수 상태를 지속적으로 증명합니다.  
 감사자에게는 자동 점검 및 리포팅, 피감사자에게는 증빙자료 생성, 실무자에게는 업무 착수 전 규정 적합성 사전 검토를 제공해 감사 비용을 절감하고 리스크를 조기에 대응합니다.
+
+* [금융결제원 알고리즘 공정성 검증](https://algorithm.kftc.or.kr/service/info)
 
 ### 주요 플로우
 1. 규정 문서 업로드 → Compliance Item 자동 추출
