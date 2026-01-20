@@ -28,8 +28,9 @@ LLM_SCHEMA = {
         "status": {"type": "string", "enum": ["PASS", "FAIL", "ERROR"]},
         "reasoning": {"type": "string"},
         "evidence": {"type": "array", "items": {"type": "string"}},
+        "recommendation": {"type": "string"},
     },
-    "required": ["status", "reasoning", "evidence"],
+    "required": ["status", "reasoning", "evidence", "recommendation"],
     "additionalProperties": False,
 }
 
@@ -140,6 +141,17 @@ def _request_plan(compliance_text: str, repo_context: str) -> Dict[str, Any]:
     return call_openai_json(plan_prompt, input_text, LLM_PLAN_SCHEMA)
 
 
+def _append_recommendation(reasoning: str, recommendation: str, status: str) -> str:
+    if not recommendation:
+        if status == "FAIL":
+            recommendation = "관련 구현을 요구사항에 맞게 보완한 뒤 재검증하세요."
+        elif status == "ERROR":
+            recommendation = "오류 원인을 해결한 뒤 재검증하세요."
+        else:
+            return reasoning
+    return f"{reasoning}\n수정 방안: {recommendation}"
+
+
 def validate_item(repo_path: Path, compliance_text: str) -> Tuple[str, str, Optional[str]]:
     repo_context = _build_repo_context(repo_path)
     plan = _request_plan(compliance_text, repo_context)
@@ -172,11 +184,13 @@ def validate_item(repo_path: Path, compliance_text: str) -> Tuple[str, str, Opti
 
     result = call_openai_json(VALIDATOR_PROMPT, input_text, LLM_SCHEMA)
     status = result.get("status", "ERROR")
-    reasoning = result.get("reasoning", "No reasoning.")
+    reasoning = result.get("reasoning", "근거가 제공되지 않았습니다.")
+    recommendation = result.get("recommendation", "")
     evidence_items = result.get("evidence", [])
     evidence_text = None
     if evidence_items:
         evidence_text = "\n".join(evidence_items)
+    reasoning = _append_recommendation(reasoning, recommendation, status)
     return status, reasoning, _truncate(evidence_text)
 
 
@@ -193,19 +207,19 @@ def run_once(db: DatabaseClient, loader: GitLoader) -> int:
 
         scan = db.get_scan(scan_id)
         if not scan:
-            db.update_scan_result(result_id, "ERROR", "Scan not found.", None)
+            db.update_scan_result(result_id, "ERROR", "스캔을 찾을 수 없습니다.", None)
             processed += 1
             continue
 
         repo_url = scan.get("repo_url") or ""
         if not repo_url:
-            db.update_scan_result(result_id, "ERROR", "Scan repo_url is empty.", None)
+            db.update_scan_result(result_id, "ERROR", "스캔의 repo_url이 비어 있습니다.", None)
             processed += 1
             continue
 
         compliance_item = db.get_compliance_item(compliance_item_id)
         if not compliance_item:
-            db.update_scan_result(result_id, "ERROR", "Compliance item not found.", None)
+            db.update_scan_result(result_id, "ERROR", "컴플라이언스 항목을 찾을 수 없습니다.", None)
             processed += 1
             continue
 
@@ -213,7 +227,7 @@ def run_once(db: DatabaseClient, loader: GitLoader) -> int:
         try:
             repo_path = loader.load(repo_url)
         except Exception as exc:
-            db.update_scan_result(result_id, "ERROR", f"Repo load failed: {exc}", None)
+            db.update_scan_result(result_id, "ERROR", f"리포지토리 로드 실패: {exc}", None)
             processed += 1
             continue
 

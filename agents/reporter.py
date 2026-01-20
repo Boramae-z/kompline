@@ -27,59 +27,64 @@ def _summarize_status(results: List[Dict]) -> Dict[str, int]:
 
 def _format_evidence(evidence: str | None, indent: str = "") -> str:
     if not evidence:
-        return f"{indent}- Evidence: (none)"
+        return f"{indent}- 증거: (없음)"
     lines = [line for line in evidence.splitlines() if line.strip()]
     if len(lines) == 1:
-        return f"{indent}- Evidence: {lines[0]}"
+        return f"{indent}- 증거: {lines[0]}"
     joined = "\n".join(lines)
-    return f"{indent}- Evidence:\n\n```text\n{joined}\n```\n"
+    return f"{indent}- 증거:\n\n```text\n{joined}\n```\n"
+
+
+def _extract_recommendation(reasoning: str, status: str) -> str:
+    if not reasoning:
+        return "수정 방안 없음."
+    for line in reasoning.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("수정 방안:"):
+            return stripped.replace("수정 방안:", "", 1).strip() or "수정 방안 없음."
+    if status == "FAIL":
+        return "요구사항을 충족하도록 구현을 보완한 뒤 재검증하세요."
+    if status == "ERROR":
+        return "오류 원인을 해결한 뒤 재검증하세요."
+    return "조치 필요 없음."
 
 
 def _render_result_row(result: Dict, compliance_item: Dict | None) -> str:
     status = result.get("status") or "UNKNOWN"
-    reasoning = result.get("reasoning") or "No reasoning provided."
+    reasoning = result.get("reasoning") or "사유가 제공되지 않았습니다."
     evidence_text = result.get("evidence")
-    item_text = (compliance_item or {}).get("item_text") or "(item text not available)"
+    item_text = (compliance_item or {}).get("item_text") or "(요구사항 텍스트 없음)"
     section = (compliance_item or {}).get("section")
     page = (compliance_item or {}).get("page")
 
     item_meta = []
     if section:
-        item_meta.append(f"Section: {section}")
+        item_meta.append(f"섹션: {section}")
     if page:
-        item_meta.append(f"Page: {page}")
-    item_meta_text = ", ".join(item_meta) if item_meta else "Section/Page: (not provided)"
+        item_meta.append(f"페이지: {page}")
+    item_meta_text = ", ".join(item_meta) if item_meta else "섹션/페이지: (제공되지 않음)"
 
     if status == "PASS":
-        explanation = (
-            "The validator found this requirement satisfied based on the reasoning and evidence below."
-        )
-        recommendation = "No action required."
+        explanation = "아래 근거와 증거를 기준으로 요구사항을 충족한다고 판단했습니다."
+        recommendation = "조치 필요 없음."
     elif status == "FAIL":
-        explanation = (
-            "This requirement is not satisfied. The validator indicates a compliance gap and cites the evidence below."
-        )
-        recommendation = (
-            "Update the implementation to satisfy this requirement, then re-run the scan. "
-            f"Focus on the gap described in the reasoning: {reasoning}"
-        )
+        explanation = "요구사항을 충족하지 못했습니다. 근거와 증거를 확인하세요."
+        recommendation = _extract_recommendation(reasoning, status)
     else:
-        explanation = (
-            "The scan could not complete successfully for this item. See reasoning and evidence below."
-        )
-        recommendation = "Resolve the scan error described in the reasoning, then re-run the scan."
+        explanation = "이 항목은 정상적으로 평가되지 않았습니다. 사유와 증거를 확인하세요."
+        recommendation = _extract_recommendation(reasoning, status)
 
     evidence_block = _format_evidence(evidence_text)
 
     return (
-        f"### Compliance Item {result.get('compliance_item_id')}\n"
-        f"- Status: {status}\n"
-        f"- Requirement: {item_text}\n"
+        f"### 컴플라이언스 항목 {result.get('compliance_item_id')}\n"
+        f"- 상태: {status}\n"
+        f"- 요구사항: {item_text}\n"
         f"- {item_meta_text}\n"
-        f"- Explanation: {explanation}\n"
-        f"- Reasoning: {reasoning}\n"
+        f"- 설명: {explanation}\n"
+        f"- 근거: {reasoning}\n"
         f"{evidence_block}\n"
-        f"- Recommendation: {recommendation}\n"
+        f"- 수정 방안: {recommendation}\n"
     )
 
 
@@ -99,15 +104,15 @@ def generate_report(
     total_results = sum(summary.values())
     failures = summary.get("FAIL", 0) + summary.get("ERROR", 0)
     lines = [
-        "# Kompline Compliance Report",
+        "# Kompline 컴플라이언스 보고서",
         "",
-        "## Scan Metadata",
+        "## 스캔 메타데이터",
         "",
-        f"- Scan ID: {scan.get('id')}",
-        f"- Repo URL: {scan.get('repo_url')}",
-        f"- Generated At (UTC): {_utc_now()}",
+        f"- 스캔 ID: {scan.get('id')}",
+        f"- 저장소 URL: {scan.get('repo_url')}",
+        f"- 생성 시각(UTC): {_utc_now()}",
         "",
-        "## Executive Summary",
+        "## 요약",
         "",
     ]
     for status, count in sorted(summary.items()):
@@ -116,10 +121,10 @@ def generate_report(
     lines.extend(
         [
             "",
-            f"- Total Checks: {total_results}",
-            f"- Findings Requiring Action: {failures}",
+            f"- 총 점검 수: {total_results}",
+            f"- 조치 필요 건수: {failures}",
             "",
-            "## Findings",
+            "## 결과 상세",
             "",
         ]
     )
