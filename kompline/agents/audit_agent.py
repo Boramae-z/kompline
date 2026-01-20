@@ -90,6 +90,7 @@ class AuditAgent:
         self.critical_only = critical_only
         self._agent: "Agent | None" = None
         self._llm_agent: "Agent | None" = None
+        self._llm_model: str | None = None
         self._current_run_config: RunConfig | None = None
 
     @property
@@ -209,8 +210,12 @@ class AuditAgent:
 
     def _get_llm_agent(self) -> "Agent":
         """Create (or reuse) the LLM evaluation agent."""
-        if self._llm_agent is None:
+        model = None
+        if self._current_run_config:
+            model = self._current_run_config.llm_model
+        if self._llm_agent is None or model != self._llm_model:
             from agents import Agent
+            kwargs = {"model": model} if model else {}
             self._llm_agent = Agent(
                 name="AuditLLMEvaluator",
                 instructions=(
@@ -221,7 +226,9 @@ class AuditAgent:
                     "evidence_ids (list of evidence IDs).\n"
                     "Only use evidence_ids from the provided evidence list."
                 ),
+                **kwargs,
             )
+            self._llm_model = model
         return self._llm_agent
 
     async def _llm_evaluate_all_rules(

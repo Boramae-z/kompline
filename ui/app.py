@@ -1,10 +1,11 @@
 """Streamlit demo UI for Kompline."""
 
-import streamlit as st
 import asyncio
+
 import httpx
-from datetime import datetime
-from pathlib import Path
+import streamlit as st
+
+from kompline.demo_data import register_demo_compliances
 
 # Page config
 st.set_page_config(
@@ -78,13 +79,20 @@ def rank_deposits_biased(products, preferred_banks=None):
 '''
 
 
-async def analyze_via_api(source_code: str, require_review: bool = True) -> dict:
+async def analyze_via_api(
+    source_code: str,
+    require_review: bool = True,
+    compliance_ids: list[str] | None = None,
+    use_llm: bool = True,
+) -> dict:
     """Call the FastAPI backend for analysis."""
     async with httpx.AsyncClient(timeout=60.0) as client:
         response = await client.post(
             f"{API_URL}/analyze",
             json={
                 "source_code": source_code,
+                "compliance_ids": compliance_ids,
+                "use_llm": use_llm,
                 "require_review": require_review,
             },
         )
@@ -92,16 +100,35 @@ async def analyze_via_api(source_code: str, require_review: bool = True) -> dict
         return response.json()
 
 
-async def analyze_local(source_code: str, require_review: bool = True) -> dict:
+async def analyze_local(
+    source_code: str,
+    require_review: bool = True,
+    compliance_ids: list[str] | None = None,
+    use_llm: bool = True,
+) -> dict:
     """Run analysis locally without API."""
     try:
         from kompline.runner import KomplineRunner
         runner = KomplineRunner()
-        result = await runner.analyze(source_code, require_review=require_review)
+        result = await runner.analyze(
+            source_code=source_code,
+            compliance_ids=compliance_ids,
+            use_llm=use_llm,
+            require_review=require_review,
+        )
+        pending_reviews = []
+        payload = result.get("result") or {}
+        for rel in payload.get("relations", []):
+            for finding in rel.get("findings", []):
+                if finding.get("requires_human_review"):
+                    pending_reviews.append(finding)
+
         return {
             "success": result.get("success", False),
+            "result": result.get("result"),
             "report": result.get("report"),
-            "pending_reviews": [],
+            "report_markdown": result.get("report_markdown"),
+            "pending_reviews": pending_reviews,
             "trace": runner.get_trace(),
             "error": result.get("error"),
         }
@@ -115,41 +142,34 @@ async def analyze_local(source_code: str, require_review: bool = True) -> dict:
         }
 
 
-async def get_pending_reviews() -> list:
-    """Get pending reviews from API."""
-    try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            response = await client.get(f"{API_URL}/reviews")
-            response.raise_for_status()
-            return response.json().get("pending", [])
-    except Exception:
-        return []
-
-
-async def submit_review(request_id: str, action: str, comment: str = "") -> dict:
-    """Submit a review response."""
-    async with httpx.AsyncClient(timeout=10.0) as client:
-        response = await client.post(
-            f"{API_URL}/reviews/{request_id}",
-            json={
-                "request_id": request_id,
-                "action": action,
-                "comment": comment,
-            },
-        )
-        response.raise_for_status()
-        return response.json()
-
-
-def run_analysis(source_code: str, require_review: bool, use_api: bool):
+def run_analysis(
+    source_code: str,
+    require_review: bool,
+    use_api: bool,
+    compliance_ids: list[str] | None,
+    use_llm: bool,
+):
     """Run the analysis synchronously."""
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     try:
         if use_api:
-            return loop.run_until_complete(analyze_via_api(source_code, require_review))
-        else:
-            return loop.run_until_complete(analyze_local(source_code, require_review))
+            return loop.run_until_complete(
+                analyze_via_api(
+                    source_code,
+                    require_review=require_review,
+                    compliance_ids=compliance_ids,
+                    use_llm=use_llm,
+                )
+            )
+        return loop.run_until_complete(
+            analyze_local(
+                source_code,
+                require_review=require_review,
+                compliance_ids=compliance_ids,
+                use_llm=use_llm,
+            )
+        )
     finally:
         loop.close()
 
@@ -187,8 +207,19 @@ def main():
                 st.error("API not available")
                 st.caption(f"Start server: `uvicorn api.main:app --port 8080`")
 
+        use_llm = st.checkbox("Use LLM Evaluation", value=True)
         require_review = st.checkbox("Enable Human-in-the-Loop", value=True)
         show_trace = st.checkbox("Show Real-time Logs", value=True)
+
+        st.divider()
+
+        st.header("Compliance Selection")
+        compliance_ids = register_demo_compliances()
+        selected_compliances = st.multiselect(
+            "Apply compliances",
+            options=compliance_ids,
+            default=["byeolji5-fairness"],
+        )
 
         st.divider()
 
@@ -207,6 +238,10 @@ def main():
 
     with col1:
         st.header("Source Code Input")
+
+        uploaded = st.file_uploader("Upload a .py file", type=["py"])
+        if uploaded is not None:
+            st.session_state.code_input = uploaded.read().decode("utf-8")
 
         code_input = st.text_area(
             "Enter Python code to analyze",
@@ -227,10 +262,12 @@ def main():
                         code_input,
                         require_review,
                         st.session_state.use_api,
+                        selected_compliances,
+                        use_llm,
                     )
 
-                    if result.get("success") and result.get("report"):
-                        st.session_state.analysis_result = result["report"]
+                    if result.get("success"):
+                        st.session_state.analysis_result = result
                         st.session_state.trace_events = result.get("trace", [])
                         st.session_state.pending_reviews = result.get("pending_reviews", [])
                     elif result.get("error"):
@@ -256,68 +293,54 @@ def main():
             st.error(st.session_state.error_message)
 
         if st.session_state.analysis_result:
-            result = st.session_state.analysis_result
-            status = result.get("overall_status", "UNKNOWN")
+            payload = st.session_state.analysis_result
+            summary = payload.get("result") or {}
 
-            # Status badge
+            if summary:
+                status = "COMPLIANT" if summary.get("is_compliant") else "NON_COMPLIANT"
+            else:
+                status = "UNKNOWN"
+
             if status == "COMPLIANT":
                 st.success("COMPLIANT - Regulation Satisfied")
             elif status == "NON_COMPLIANT":
                 st.error("NON_COMPLIANT - Violations Found")
-            elif status == "PENDING_REVIEW":
-                st.warning("PENDING_REVIEW - Human Review Required")
             else:
-                st.info(f"Status: {status}")
+                st.info("Status: UNKNOWN")
 
-            # Summary metrics
-            summary = result.get("summary", {"PASS": 0, "FAIL": 0, "REVIEW": 0})
             cols = st.columns(3)
-            cols[0].metric("PASS", summary.get("PASS", 0))
+            cols[0].metric("PASS", summary.get("total_passed", 0))
             cols[1].metric(
                 "FAIL",
-                summary.get("FAIL", 0),
-                delta=None if summary.get("FAIL", 0) == 0 else f"-{summary.get('FAIL', 0)}",
+                summary.get("total_failed", 0),
+                delta=None if summary.get("total_failed", 0) == 0 else f"-{summary.get('total_failed', 0)}",
             )
-            cols[2].metric("REVIEW", summary.get("REVIEW", 0))
+            cols[2].metric("REVIEW", summary.get("total_review", 0))
 
             st.divider()
 
-            # Detailed checks
-            st.subheader("Detailed Check Results")
-            for check in result.get("checks", []):
-                status_icon = {"PASS": "✅", "FAIL": "❌", "REVIEW": "⚠️"}.get(
-                    check.get("status", ""), "❓"
-                )
-                rule_id = check.get("rule_id", "Unknown")
-                rule_title = check.get("rule_title", "")
+            st.subheader("Detailed Findings")
+            for relation in summary.get("relations", []):
+                title = f"{relation['compliance_id']} × {relation['artifact_id']}"
+                with st.expander(title):
+                    for finding in relation.get("findings", []):
+                        status_icon = {
+                            "pass": "✅",
+                            "fail": "❌",
+                            "review": "⚠️",
+                            "not_applicable": "➖",
+                        }.get(finding.get("status"), "❓")
+                        st.write(f"{status_icon} {finding.get('rule_id', 'Unknown')}")
+                        st.write(f"**Status**: {finding.get('status', 'unknown')}")
+                        st.write(f"**Confidence**: {finding.get('confidence', 0):.0%}")
+                        st.write(f"**Reasoning**: {finding.get('reasoning', '')}")
+                        if finding.get("recommendation"):
+                            st.warning(f"**Recommendation**: {finding['recommendation']}")
 
-                with st.expander(f"{status_icon} {rule_id} - {rule_title}"):
-                    st.write(f"**Status**: {check.get('status', 'Unknown')}")
-                    st.write(f"**Confidence**: {check.get('confidence', 0):.0%}")
-
-                    # Evidence with citations
-                    st.write("**Evidence**:")
-                    for evidence in check.get("evidence", []):
-                        st.write(f"- {evidence}")
-
-                    # Citations (from RAG)
-                    citations = check.get("citations", [])
-                    if citations:
-                        st.write("**Source Citations**:")
-                        for citation in citations:
-                            source = citation.get("source", "Unknown")
-                            text = citation.get("text", "")
-                            relevance = citation.get("relevance", 0)
-                            st.caption(f"📚 [{source}] {text} (relevance: {relevance:.0%})")
-
-                    if check.get("recommendation"):
-                        st.warning(f"**Recommendation**: {check['recommendation']}")
-
-            # Report info
-            if result.get("report_id"):
+            if payload.get("report_markdown"):
                 st.divider()
-                st.caption(f"Report ID: {result.get('report_id')}")
-                st.caption(f"Generated: {result.get('generated_at', 'N/A')}")
+                st.subheader("Report")
+                st.markdown(payload.get("report_markdown", ""))
 
         elif not st.session_state.error_message:
             st.info("Enter code and click 'Start Analysis' to begin.")
@@ -349,36 +372,11 @@ def main():
     if st.session_state.pending_reviews:
         st.divider()
         st.header("Pending Reviews (HITL)")
-
-        for review_id in st.session_state.pending_reviews:
-            with st.expander(f"Review: {review_id}"):
-                col1, col2 = st.columns(2)
-                with col1:
-                    if st.button("Approve", key=f"approve_{review_id}"):
-                        try:
-                            loop = asyncio.new_event_loop()
-                            result = loop.run_until_complete(
-                                submit_review(review_id, "approve", "Approved via UI")
-                            )
-                            st.success("Review approved")
-                            st.session_state.pending_reviews.remove(review_id)
-                        except Exception as e:
-                            st.error(f"Failed: {e}")
-                        finally:
-                            loop.close()
-                with col2:
-                    if st.button("Reject", key=f"reject_{review_id}"):
-                        try:
-                            loop = asyncio.new_event_loop()
-                            result = loop.run_until_complete(
-                                submit_review(review_id, "reject", "Rejected via UI")
-                            )
-                            st.warning("Review rejected")
-                            st.session_state.pending_reviews.remove(review_id)
-                        except Exception as e:
-                            st.error(f"Failed: {e}")
-                        finally:
-                            loop.close()
+        for finding in st.session_state.pending_reviews:
+            with st.expander(f"Review Needed: {finding.get('rule_id', 'Unknown')}"):
+                st.write(f"Status: {finding.get('status')}")
+                st.write(f"Confidence: {finding.get('confidence', 0):.0%}")
+                st.write(f"Reasoning: {finding.get('reasoning', '')}")
 
     # Footer
     st.divider()

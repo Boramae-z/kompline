@@ -10,8 +10,7 @@ import numpy as np
 import requests
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, UploadFile, File
-from fastapi.responses import HTMLResponse
-from fastapi.responses import Response
+from fastapi.responses import HTMLResponse, Response
 
 load_dotenv()
 
@@ -32,10 +31,14 @@ EMBEDDING_BATCH = int(os.getenv("EMBEDDING_BATCH", "64"))
 app = FastAPI(title="RAG Embedding API")
 
 
-def embed_texts(texts: List[str]) -> np.ndarray:
+def _require_openai_key() -> None:
+    """Raise HTTPException if OpenAI API key is not configured."""
     if not OPENAI_API_KEY:
         raise HTTPException(status_code=500, detail="OPENAI_API_KEY is not set")
 
+
+def embed_texts(texts: List[str]) -> np.ndarray:
+    _require_openai_key()
     embeddings: List[List[float]] = []
     for i in range(0, len(texts), EMBEDDING_BATCH):
         batch = texts[i : i + EMBEDDING_BATCH]
@@ -76,8 +79,7 @@ def _extract_response_text(payload: Dict[str, Any]) -> str:
 
 
 def pdf_to_markdown_gpt(pdf_bytes: bytes, filename: str) -> str:
-    if not OPENAI_API_KEY:
-        raise HTTPException(status_code=500, detail="OPENAI_API_KEY is not set")
+    _require_openai_key()
     if not pdf_bytes:
         return ""
 
@@ -123,8 +125,7 @@ def pdf_to_markdown_gpt(pdf_bytes: bytes, filename: str) -> str:
 
 
 def generate_semantic_markdown(markdown_text: str) -> Dict[str, str]:
-    if not OPENAI_API_KEY:
-        raise HTTPException(status_code=500, detail="OPENAI_API_KEY is not set")
+    _require_openai_key()
     if not markdown_text.strip():
         return {"semantic_markdown": "", "summary_markdown": ""}
 
@@ -178,8 +179,7 @@ def generate_semantic_markdown(markdown_text: str) -> Dict[str, str]:
 
 
 def generate_compliance_markdown(markdown_text: str) -> str:
-    if not OPENAI_API_KEY:
-        raise HTTPException(status_code=500, detail="OPENAI_API_KEY is not set")
+    _require_openai_key()
     if not markdown_text.strip():
         return ""
 

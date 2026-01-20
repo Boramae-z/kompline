@@ -1,0 +1,149 @@
+# 별지5 알고리즘 공정성 자가평가 규정
+# Appendix 5: Algorithm Fairness Self-Assessment Compliance
+
+id: byeolji5-fairness
+name: 별지5 알고리즘공정성
+version: "2024.01"
+jurisdiction: KR
+description: |
+  금융상품 비교·추천 플랫폼의 알고리즘 공정성 자가평가 규정.
+  Korean financial product comparison platform algorithm fairness self-assessment.
+effective_date: "2024-01-01"
+report_template: byeolji5
+
+scope:
+  - algorithm
+  - ranking
+  - recommendation
+  - comparison
+
+evidence_requirements:
+  - id: ER-001
+    description: Source code of ranking/recommendation algorithm
+    artifact_types: [code]
+    extraction_hints:
+      - Look for sort(), sorted(), rank functions
+      - Find weight/factor definitions
+      - Identify filtering logic
+    required: true
+
+  - id: ER-002
+    description: Configuration files with weight factors
+    artifact_types: [config]
+    extraction_hints:
+      - YAML/JSON files with weights
+      - Environment variables
+    required: false
+
+rules:
+  - id: ALG-001
+    title: 정렬 기준 투명성 (Sorting Transparency)
+    description: |
+      정렬 알고리즘은 명확하고 문서화된 기준을 가져야 합니다.
+      Sorting algorithms must have clear, documented criteria.
+    category: algorithm_fairness
+    severity: high
+    check_points:
+      - Sorting criteria must be explicitly defined
+      - Weight factors must be documented in code or config
+      - Sorting logic must be deterministic (no hidden randomization)
+    pass_criteria: |
+      All sorting factors are documented and justified in code comments or configuration.
+    fail_examples:
+      - Undocumented weight factors
+      - Magic numbers without explanation
+      - Hidden priority adjustments
+    evidence_requirements:
+      - id: ALG-001-EV1
+        description: Code showing sorting implementation
+        artifact_types: [code]
+        extraction_hints:
+          - sort() or sorted() function calls
+          - key parameter definitions
+        required: true
+
+  - id: ALG-002
+    title: 계열사 편향 금지 (No Affiliate Bias)
+    description: |
+      계열사 또는 제휴 금융기관 상품에 대한 부당한 우대 금지.
+      No unfair preferential treatment for affiliated financial products.
+    category: algorithm_fairness
+    severity: critical
+    check_points:
+      - No preferential ranking boost for affiliated products
+      - Equal opportunity for all eligible products
+      - Affiliate status must not affect ranking score
+    pass_criteria: |
+      Ranking algorithm does not consider affiliate status as a factor.
+      Any business relationships do not influence ranking results.
+    fail_examples:
+      - is_affiliated check in ranking logic
+      - Affiliate boost multiplier
+      - Preferred bank list in scoring
+    evidence_requirements:
+      - id: ALG-002-EV1
+        description: Code checking for affiliate status
+        artifact_types: [code]
+        extraction_hints:
+          - is_affiliated
+          - affiliate_boost
+          - preferred_banks
+        required: true
+
+  - id: ALG-003
+    title: 무작위화 공개 (Randomization Disclosure)
+    description: |
+      결과에 영향을 미치는 무작위화는 사용자에게 공개해야 합니다.
+      Any randomization affecting results must be disclosed to users.
+    category: disclosure
+    severity: high
+    check_points:
+      - Randomization must be disclosed to users
+      - Random seed should be documented
+      - Randomization should not disadvantage any party
+    pass_criteria: |
+      If randomization is used, it is clearly disclosed and does not create unfair advantages.
+    fail_examples:
+      - Hidden shuffle() without disclosure
+      - Undocumented random selection
+      - Biased random weight generation
+    evidence_requirements:
+      - id: ALG-003-EV1
+        description: Code using random functions
+        artifact_types: [code]
+        extraction_hints:
+          - random.shuffle
+          - random.choice
+          - random.sample
+        required: true
+
+  - id: ALG-004
+    title: 가중치 문서화 (Weight Documentation)
+    description: |
+      모든 가중치 요소는 문서화되어야 합니다.
+      All weight factors must be documented.
+    category: transparency
+    severity: medium
+    check_points:
+      - Weight factors defined in constants or config
+      - Each weight has explanatory comment
+      - Weights sum to expected total (if applicable)
+    pass_criteria: |
+      All numerical weights are defined as named constants with documentation.
+    fail_examples:
+      - Inline magic numbers (e.g., score *= 1.2)
+      - Undocumented weight dictionaries
+    evidence_requirements:
+      - id: ALG-004-EV1
+        description: Weight definitions in code or config
+        artifact_types: [code, config]
+        extraction_hints:
+          - WEIGHTS constant
+          - weight_factors
+          - scoring_weights
+        required: true
+
+metadata:
+  source: Financial Services Commission (금융위원회)
+  reference_url: https://www.fsc.go.kr
+  last_updated: "2024-01-15"

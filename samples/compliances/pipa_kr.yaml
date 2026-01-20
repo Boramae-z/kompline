@@ -1,0 +1,151 @@
+# 개인정보보호법 (PIPA) 규정
+# Personal Information Protection Act Compliance
+
+id: pipa-kr-2024
+name: 개인정보보호법
+version: "2024.01"
+jurisdiction: KR
+description: |
+  개인정보의 수집, 이용, 제공, 관리에 관한 규정.
+  Korean Personal Information Protection Act compliance for data handling.
+effective_date: "2024-01-01"
+report_template: internal
+
+scope:
+  - data_handling
+  - privacy
+  - security
+  - consent
+
+evidence_requirements:
+  - id: PIPA-ER-001
+    description: Code handling personal information
+    artifact_types: [code]
+    extraction_hints:
+      - user_data, personal_info, PII
+      - database queries with user data
+      - API endpoints returning user information
+    required: true
+
+  - id: PIPA-ER-002
+    description: Data handling configuration
+    artifact_types: [config]
+    extraction_hints:
+      - encryption settings
+      - retention policies
+      - access control lists
+    required: false
+
+rules:
+  - id: PIPA-001
+    title: 최소 수집 원칙 (Minimum Collection Principle)
+    description: |
+      목적에 필요한 최소한의 개인정보만 수집해야 합니다.
+      Only minimum necessary personal information should be collected.
+    category: privacy
+    severity: high
+    check_points:
+      - Data collection limited to stated purpose
+      - No excessive data fields collected
+      - Clear justification for each field
+    pass_criteria: |
+      Only essential personal information is collected with clear purpose documentation.
+    fail_examples:
+      - Collecting unnecessary fields (e.g., birth date for newsletter)
+      - Storing data beyond stated purpose
+      - No documentation of collection purpose
+    evidence_requirements:
+      - id: PIPA-001-EV1
+        description: Data model or schema definition
+        artifact_types: [code, config]
+        extraction_hints:
+          - User model definition
+          - Database schema
+          - API request body
+        required: true
+
+  - id: PIPA-002
+    title: 암호화 요구사항 (Encryption Requirements)
+    description: |
+      개인정보는 암호화하여 저장해야 합니다.
+      Personal information must be stored encrypted.
+    category: security
+    severity: critical
+    check_points:
+      - Sensitive data encrypted at rest
+      - Secure transmission (HTTPS/TLS)
+      - Password hashing implemented
+    pass_criteria: |
+      All personal information is encrypted in storage and transit.
+    fail_examples:
+      - Plain text password storage
+      - Unencrypted PII in database
+      - HTTP transmission of sensitive data
+    evidence_requirements:
+      - id: PIPA-002-EV1
+        description: Encryption implementation code
+        artifact_types: [code, config]
+        extraction_hints:
+          - encrypt, decrypt functions
+          - bcrypt, argon2, scrypt
+          - SSL/TLS configuration
+        required: true
+
+  - id: PIPA-003
+    title: 접근 제어 (Access Control)
+    description: |
+      개인정보에 대한 접근은 권한이 있는 자만 가능해야 합니다.
+      Access to personal information must be restricted to authorized personnel.
+    category: security
+    severity: high
+    check_points:
+      - Authentication required for data access
+      - Role-based access control implemented
+      - Access logging enabled
+    pass_criteria: |
+      Personal information access is restricted and logged.
+    fail_examples:
+      - No authentication for data endpoints
+      - Missing authorization checks
+      - No access audit trail
+    evidence_requirements:
+      - id: PIPA-003-EV1
+        description: Access control implementation
+        artifact_types: [code]
+        extraction_hints:
+          - @require_auth decorator
+          - permission_required
+          - access_control_list
+        required: true
+
+  - id: PIPA-004
+    title: 데이터 보유 기간 (Data Retention)
+    description: |
+      개인정보는 목적 달성 후 지체 없이 파기해야 합니다.
+      Personal information must be destroyed after purpose fulfillment.
+    category: data_handling
+    severity: medium
+    check_points:
+      - Retention period defined
+      - Automatic deletion implemented
+      - Deletion logging in place
+    pass_criteria: |
+      Clear retention policy with automatic enforcement.
+    fail_examples:
+      - Indefinite data storage
+      - No deletion mechanism
+      - Missing retention policy
+    evidence_requirements:
+      - id: PIPA-004-EV1
+        description: Retention policy and deletion code
+        artifact_types: [code, config]
+        extraction_hints:
+          - retention_days
+          - delete_expired_data
+          - data_cleanup
+        required: true
+
+metadata:
+  source: Personal Information Protection Commission (개인정보보호위원회)
+  reference_url: https://www.pipc.go.kr
+  last_updated: "2024-01-01"

@@ -69,9 +69,8 @@ One Artifact can be audited against multiple Compliances, or one Compliance can 
 
 - **Multi-Agent Parallel Execution**: Spawn independent audit agents per (Compliance, Artifact) relation
 - **Evidence-Based Audit**: Structured evidence collection with provenance tracking
-- **RAG-Powered Rule Matching**: Semantic search over compliance rules with source citations
-- **Human-in-the-Loop**: Automatic triggers for low confidence, FAIL findings, and new patterns
-- **Error Recovery**: Automatic retry with exponential backoff and alternative strategies
+- **LLM-Assisted Rule Evaluation**: Use OpenAI to assess rules from extracted evidence (fallback to heuristics)
+- **Human-in-the-Loop**: Automatic triggers for low confidence and FAIL findings
 - **별지5 Report Generation**: Regulatory-compliant report format with evidence references
 - **Observability**: Full tracing and audit logging for inspection readiness
 
@@ -116,58 +115,29 @@ LOG_LEVEL=INFO
 
 ### Running the Demo
 
-#### Option 1: Python Demo Script (Recommended for first-time)
+#### Option 1: Quick CLI (Recommended)
 
 ```bash
-# Run the multi-compliance demo
-python samples/demo_scenario.py
+kompline samples/deposit_ranking.py
 ```
 
-Expected output:
-```
-============================================================
-Kompline Multi-Compliance Audit Demo
-============================================================
+#### Option 2: Multi-Compliance Demo Script
 
-1. Setting up compliances and artifacts...
-Registered 2 compliances: ['byeolji5-fairness', 'pipa-kr-2024']
-Registered artifact: Deposit Ranking Algorithm
-
-2. Creating audit orchestrator...
-   Orchestrator ready (parallel=True)
-
-3. Running audit...
-   Compliance: byeolji5-fairness
-   Artifact: deposit-ranking-code
-
-4. Audit Results:
-   Total relations: 1
-   Total findings: 3
-   Passed: 0
-   Failed: 3
-   Is compliant: False
-
-5. Detailed Findings:
-   ❌ ALG-001 - shuffle() detected, undocumented randomization
-   ❌ ALG-002 - is_affiliated check found, affiliate bias
-   ❌ ALG-003 - Hidden boost factor 1.2x
-
-6. Generating 별지5 Report...
-============================================================
-별지5. 알고리즘 자가평가서
-============================================================
-종합 판정: 부적합
-...
+```bash
+python -m samples.demo_scenario
 ```
 
-#### Option 2: FastAPI Server
+This script registers demo compliances (별지5 + 개인정보보호법), registers the sample
+artifact, runs parallel audits, and prints a 별지5 report.
+
+#### Option 3: FastAPI Server
 
 ```bash
 # Start the API server
-uvicorn api.main:app --host 0.0.0.0 --port 8080 --reload
+uvicorn api.main:app --host 0.0.0.0 --port 8888 --reload
 
 # In another terminal, test the API
-curl -X POST http://localhost:8080/analyze \
+curl -X POST http://localhost:8888/analyze \
   -H "Content-Type: application/json" \
   -d '{
     "source_code": "def rank(products): return sorted(products, key=lambda x: x.rate)",
@@ -176,31 +146,36 @@ curl -X POST http://localhost:8080/analyze \
 ```
 
 API Endpoints:
-- `POST /analyze` - Analyze source code
-- `GET /compliances` - List registered compliances
-- `GET /health` - Health check
+- `GET /` - Health check
+- `POST /analyze` - Analyze source code for compliance
+- `GET /reviews` - Get pending human reviews
+- `GET /trace` - Get agent execution trace
+- `DELETE /trace` - Clear execution trace
 
-#### Option 3: Streamlit UI
+API Documentation: http://localhost:8080/docs (Swagger UI)
+
+#### Option 4: Streamlit UI
 
 ```bash
 # Start the Streamlit demo
-streamlit run ui/app.py
+streamlit run ui/app.py --server.headless true
 
 # Open browser at http://localhost:8501
 ```
 
 The UI provides:
-- Code input with syntax highlighting
+- Code input and file upload
 - Real-time agent activity log
 - Interactive compliance results
 - 별지5 report preview
-- HITL review queue
+- Pending review list (HITL)
 
 ## Project Structure
 
 ```
 kompline/
 ├── kompline/
+│   ├── demo_data.py               # Demo compliance/artifact bootstrap
 │   ├── models/                    # Domain models
 │   │   ├── compliance.py          # Compliance, Rule, EvidenceRequirement
 │   │   ├── artifact.py            # Artifact, ArtifactType, Provenance
@@ -234,16 +209,18 @@ kompline/
 │   │   └── review_handler.py      # Review queue management
 │   └── tracing/
 │       └── logger.py              # Audit logging
+│   └── utils/
+│       └── json_utils.py          # LLM JSON parsing helpers
 ├── api/
 │   └── main.py                    # FastAPI server
 ├── ui/
 │   └── app.py                     # Streamlit demo
 ├── samples/
+│   ├── demo_scenario.py           # Multi-compliance demo script
 │   ├── compliances/               # YAML compliance definitions
 │   │   ├── byeolji5_fairness.yaml
 │   │   └── pipa_kr.yaml
-│   ├── deposit_ranking.py         # Sample code with issues
-│   └── demo_scenario.py           # Multi-compliance demo
+│   └── deposit_ranking.py         # Sample code with compliance issues
 ├── tests/
 └── docs/
     └── audits/                    # Regulatory forms (PDF)
@@ -253,12 +230,12 @@ kompline/
 
 | Agent | Role | Tools |
 |-------|------|-------|
-| **AuditOrchestrator** | Build relations, spawn agents in parallel, aggregate findings, retry on failure | `create_audit_relations`, `aggregate_findings` |
+| **AuditOrchestrator** | Build relations, spawn agents in parallel, aggregate findings | `create_audit_relations`, `aggregate_findings` |
 | **AuditAgent** | Evaluate single (Compliance, Artifact) relation | `collect_evidence`, `evaluate_rule` |
 | **CodeReader** | Extract code evidence via AST parsing | `parse_code`, `detect_patterns` |
 | **PDFReader** | Extract text/tables from PDF documents | `extract_text`, `extract_tables` |
 | **ConfigReader** | Parse YAML/JSON configuration files | `read_config`, `validate_schema` |
-| **RuleEvaluator** | Match evidence against rules using RAG | `query_rules`, `evaluate_compliance` |
+| **RuleEvaluator** | (Optional) RAG-based rule matching | `query_rules`, `evaluate_compliance` |
 | **ReportGenerator** | Generate regulatory format reports | `format_byeolji5`, `export_pdf` |
 
 ## Human-in-the-Loop Triggers
@@ -270,44 +247,15 @@ kompline/
 | **New Pattern** | Pattern not in rule database | Flag for rule update |
 | **Conflicting Evidence** | Evidence contradicts finding | Escalate to senior auditor |
 
-## Error Handling & Retry
+## Error Handling & Retry (Planned)
 
-The orchestrator implements robust error recovery:
+Advanced retry strategies (exponential backoff, reader fallback) are planned but
+not enabled in the default demo yet.
 
-```python
-# Automatic retry with exponential backoff
-retry_config = RetryConfig(
-    max_retries=3,
-    base_delay=1.0,
-    max_delay=30.0,
-    exponential_base=2.0,
-)
+## RAG Citations (Planned)
 
-# Alternative strategies on repeated failure
-- Reader failure → Try alternative reader
-- API timeout → Reduce batch size
-- Parse error → Fallback to text analysis
-```
-
-## RAG Citations
-
-All rule matches include source citations:
-
-```json
-{
-  "rule_id": "ALG-002",
-  "status": "FAIL",
-  "evidence_refs": ["ev-001", "ev-002"],
-  "citations": [
-    {
-      "source": "별지5 제3조 제2항",
-      "text": "계열사 상품에 대한 부당한 우대 금지",
-      "page": 2,
-      "relevance": 0.94
-    }
-  ]
-}
-```
+RAG-backed citations are planned for the rule-matching pipeline. The current
+demo focuses on evidence extraction and LLM/heuristic evaluation.
 
 ## Development
 

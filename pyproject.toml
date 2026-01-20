@@ -1,0 +1,63 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "kompline"
+version = "0.1.0"
+description = "Multi-agent continuous compliance system for Korean financial regulations"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.11"
+authors = [
+    { name = "Kompline Team" }
+]
+keywords = ["compliance", "agents", "korean-regulations", "fintech"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+
+dependencies = [
+    "openai-agents>=0.0.3",
+    "openai>=1.0.0",
+    "pydantic>=2.0.0",
+    "pydantic-settings>=2.0.0",
+    "fastapi>=0.111.0",
+    "uvicorn>=0.30.0",
+    "streamlit>=1.30.0",
+    "python-dotenv>=1.0.0",
+    "httpx>=0.27.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+    "ruff>=0.1.0",
+]
+rag = [
+    "pypdf>=4.2.0",
+    "faiss-cpu>=1.9.0",
+    "numpy>=2.0.0",
+]
+
+[project.scripts]
+kompline = "kompline.runner:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["kompline"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
