@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from kompline.runner import KomplineRunner
