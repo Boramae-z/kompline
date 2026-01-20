@@ -163,3 +163,14 @@ class ScanStore:
             .execute()
         )
         return response.data or []
+
+    def get_compliance_item(self, compliance_item_id: int) -> dict[str, Any] | None:
+        """Get a single compliance item by ID."""
+        response = (
+            self.client.table("compliance_items")
+            .select("id, document_id, item_text, item_type, section, page")
+            .eq("id", compliance_item_id)
+            .limit(1)
+            .execute()
+        )
+        return response.data[0] if response.data else None
