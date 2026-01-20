@@ -11,10 +11,11 @@ from typing import Any
 from kompline.agents.audit_orchestrator import create_audit_orchestrator
 from kompline.agents.report_generator import create_report_generator
 from kompline.demo_data import resolve_compliance_ids, register_file_artifact
+from kompline.registry import get_compliance_registry
 from kompline.guardrails.input_validator import validate_python_source
 from kompline.models import Finding, RunConfig
 from kompline.tracing.logger import setup_tracing, log_agent_event, get_tracer
-from kompline.persistence import save_audit_result
+from kompline.persistence import save_audit_result, load_registries_from_db
 from config.settings import settings
 
 try:
@@ -105,7 +106,18 @@ class KomplineRunner:
         )
 
         try:
+            if settings.database_url:
+                await load_registries_from_db()
+
             compliance_ids = resolve_compliance_ids(compliance_ids)
+            if not compliance_ids:
+                registry_ids = get_compliance_registry().list_ids()
+                if not registry_ids:
+                    return {
+                        "success": False,
+                        "error": "No compliances loaded from DB. Provide compliance_ids or seed the database.",
+                    }
+                compliance_ids = registry_ids
             artifact_id = register_file_artifact(
                 artifact_path,
                 artifact_id="inline-code" if temp_path else None,

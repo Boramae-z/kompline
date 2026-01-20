@@ -179,8 +179,7 @@ def register_repository_artifact(
 
 
 def resolve_compliance_ids(requested: Iterable[str] | None) -> list[str]:
-    """Resolve compliance IDs, registering demo defaults if needed."""
-    register_demo_compliances()
-    if not requested:
-        return ["byeolji5-fairness"]
-    return list(requested)
+    """Resolve compliance IDs."""
+    if requested:
+        return list(requested)
+    return []

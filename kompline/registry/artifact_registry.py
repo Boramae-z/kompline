@@ -4,6 +4,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from sqlalchemy import select
+
 try:
     import yaml
 except ImportError:
@@ -15,6 +17,20 @@ from kompline.models import (
     ArtifactType,
     Provenance,
 )
+from kompline.persistence.models import ArtifactRecord
+from kompline.persistence.audit_store import ensure_schema
+from kompline.db import get_sessionmaker
+
+def _parse_dt(value: Any):
+    from datetime import datetime
+    if isinstance(value, datetime):
+        return value
+    if isinstance(value, str):
+        try:
+            return datetime.fromisoformat(value)
+        except Exception:
+            return datetime.now()
+    return datetime.now()
 
 
 class ArtifactRegistry:
@@ -239,6 +255,43 @@ class ArtifactRegistry:
         artifact = self._parse_artifact(data)
         self.register(artifact)
         return artifact
+
+    async def load_from_db(self) -> list[Artifact]:
+        """Load artifact definitions from DB."""
+        await ensure_schema()
+        self.clear()
+        async_session = get_sessionmaker()
+        async with async_session() as session:
+            artifacts = (await session.execute(select(ArtifactRecord))).scalars().all()
+
+        loaded: list[Artifact] = []
+        for rec in artifacts:
+            provenance = None
+            if rec.provenance:
+                provenance = Provenance(
+                    source=rec.provenance.get("source", ""),
+                    version=rec.provenance.get("version"),
+                    retrieved_at=_parse_dt(rec.provenance.get("retrieved_at")),
+                    retrieved_by=rec.provenance.get("retrieved_by", "system"),
+                    checksum=rec.provenance.get("checksum"),
+                    metadata=rec.provenance.get("metadata", {}),
+                )
+            artifact = Artifact(
+                id=rec.id,
+                name=rec.name,
+                type=ArtifactType(rec.type),
+                locator=rec.locator,
+                access_method=AccessMethod(rec.access_method),
+                description=rec.description or "",
+                extraction_schema=rec.extraction_schema or {},
+                provenance=provenance,
+                tags=rec.tags or [],
+                metadata=rec.extra_data or {},
+            )
+            self.register_or_update(artifact)
+            loaded.append(artifact)
+
+        return loaded
 
     def load_from_directory(self, directory: str | Path) -> list[Artifact]:
         """Load all artifact definitions from a directory.

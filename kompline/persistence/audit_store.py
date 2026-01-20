@@ -60,7 +60,7 @@ async def _save_run(
         status="completed",
         compliance_ids=compliance_ids,
         artifact_ids=artifact_ids,
-        metadata=metadata,
+        extra_data=metadata,
     )
     await session.merge(record)
 
@@ -90,7 +90,7 @@ async def _save_relation(session: AsyncSession, run_id: str, rel: AuditRelation)
             type=ev.type.value,
             source=ev.source,
             content=ev.content,
-            metadata=ev.metadata,
+            extra_data=ev.metadata,
             line_number=ev.line_number,
             line_end=ev.line_end,
             page_number=ev.page_number,

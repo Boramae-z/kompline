@@ -5,8 +5,6 @@ import asyncio
 import httpx
 import streamlit as st
 
-from kompline.demo_data import register_demo_compliances
-
 # Page config
 st.set_page_config(
     page_title="Kompline - Algorithm Fairness Verification",
@@ -174,6 +172,42 @@ def run_analysis(
         loop.close()
 
 
+def run_async(coro):
+    """Run async function in a fresh event loop."""
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    try:
+        return loop.run_until_complete(coro)
+    finally:
+        loop.close()
+
+
+def load_compliance_options(use_api: bool) -> tuple[list[str], str | None]:
+    """Load compliance IDs from API or local DB."""
+    if use_api:
+        try:
+            with httpx.Client(timeout=5.0) as client:
+                resp = client.get(f"{API_URL}/api/compliances")
+                resp.raise_for_status()
+                payload = resp.json()
+            ids = [c.get("id") for c in payload.get("compliances", []) if c.get("id")]
+            return ids, None
+        except Exception as e:
+            return [], f"Failed to load compliances from API: {e}"
+
+    try:
+        from config.settings import settings
+        from kompline.persistence import load_registries_from_db
+        from kompline.registry import get_compliance_registry
+
+        if settings.database_url:
+            run_async(load_registries_from_db())
+        ids = get_compliance_registry().list_ids()
+        return ids, None
+    except Exception as e:
+        return [], f"Failed to load compliances locally: {e}"
+
+
 def main():
     st.title("⚖️ Kompline")
     st.subheader("Algorithm Fairness Continuous Verification System")
@@ -214,11 +248,15 @@ def main():
         st.divider()
 
         st.header("Compliance Selection")
-        compliance_ids = register_demo_compliances()
+        compliance_ids, compliance_error = load_compliance_options(use_api)
+        if compliance_error:
+            st.error(compliance_error)
+        if not compliance_ids:
+            st.warning("No compliances loaded. Seed the database to continue.")
         selected_compliances = st.multiselect(
             "Apply compliances",
             options=compliance_ids,
-            default=["byeolji5-fairness"],
+            default=compliance_ids[:1],
         )
 
         st.divider()

@@ -4,6 +4,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from sqlalchemy import select
+
 try:
     import yaml
 except ImportError:
@@ -17,6 +19,13 @@ from kompline.models import (
     RuleCategory,
     RuleSeverity,
 )
+from kompline.persistence.models import (
+    ComplianceRecord,
+    ComplianceItemRecord,
+    EvidenceRequirementRecord,
+)
+from kompline.persistence.audit_store import ensure_schema
+from kompline.db import get_sessionmaker
 
 
 class ComplianceRegistry:
@@ -132,6 +141,75 @@ class ComplianceRegistry:
         compliance = self._parse_compliance(data)
         self.register(compliance)
         return compliance
+
+    async def load_from_db(self) -> list[Compliance]:
+        """Load compliance definitions from DB."""
+        await ensure_schema()
+        self.clear()
+        async_session = get_sessionmaker()
+        async with async_session() as session:
+            compliances = (await session.execute(select(ComplianceRecord))).scalars().all()
+            items = (await session.execute(select(ComplianceItemRecord))).scalars().all()
+            reqs = (await session.execute(select(EvidenceRequirementRecord))).scalars().all()
+
+        by_compliance: dict[str, list[ComplianceItem]] = {}
+        for item in items:
+            by_compliance.setdefault(item.compliance_id, []).append(
+                ComplianceItem(
+                    id=item.id,
+                    compliance_id=item.compliance_id,
+                    title=item.title,
+                    description=item.description,
+                    category=RuleCategory(item.category),
+                    severity=RuleSeverity(item.severity),
+                    check_points=item.check_points or [],
+                    pass_criteria=item.pass_criteria or "",
+                    fail_examples=item.fail_examples or [],
+                    metadata=item.extra_data or {},
+                )
+            )
+
+        reqs_by_owner: dict[tuple[str, str], list[EvidenceRequirement]] = {}
+        for req in reqs:
+            reqs_by_owner.setdefault((req.owner_type, req.owner_id), []).append(
+                EvidenceRequirement(
+                    id=req.id,
+                    description=req.description,
+                    artifact_types=req.artifact_types or [],
+                    extraction_hints=req.extraction_hints or [],
+                    required=req.required,
+                )
+            )
+
+        loaded: list[Compliance] = []
+        for comp in compliances:
+            items_for_comp = by_compliance.get(comp.id, [])
+            comp_reqs = reqs_by_owner.get(("compliance", comp.id), [])
+
+            # Attach requirements to items if present
+            for item in items_for_comp:
+                item_req = reqs_by_owner.get(("item", item.id), [])
+                if item_req:
+                    item.evidence_requirements = item_req
+
+            compliance = Compliance(
+                id=comp.id,
+                name=comp.name,
+                version=comp.version,
+                jurisdiction=comp.jurisdiction,
+                scope=comp.scope or [],
+                rules=[],  # rules are deprecated; items used instead
+                items=items_for_comp,
+                evidence_requirements=comp_reqs,
+                report_template=comp.report_template,
+                description=comp.description or "",
+                effective_date=comp.effective_date,
+                metadata=comp.extra_data or {},
+            )
+            self.register_or_update(compliance)
+            loaded.append(compliance)
+
+        return loaded
 
     def load_from_directory(self, directory: str | Path) -> list[Compliance]:
         """Load all compliance definitions from a directory.
