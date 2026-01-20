@@ -1,3 +1,0 @@
-module.exports=[48591,a=>{"use strict";var b=a.i(87924),c=a.i(50944);function d(){let a=(0,c.useParams)().id;return"latest"===a&&(0,c.redirect)("/audits/latest"),(0,b.jsx)("div",{className:"min-h-screen flex items-center justify-center",children:(0,b.jsxs)("div",{className:"text-center",children:[(0,b.jsxs)("h2",{className:"text-xl font-semibold",children:["Audit: ",a]}),(0,b.jsx)("p",{className:"text-muted-foreground mt-2",children:"Audit detail view will be implemented with persistent storage."})]})})}a.s(["default",()=>d])}];
-
-//# sourceMappingURL=app_audits_%5Bid%5D_page_tsx_bb93488d._.js.map

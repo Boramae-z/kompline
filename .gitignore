@@ -5,3 +5,7 @@ rag_embedding/rag.sqlite
 __pycache__
 rag_embedding/.pytest_cache/
 .DS_Store
+
+# Next.js build artifacts
+web/.next/
+web/node_modules/
