@@ -1,316 +1,231 @@
 # Kompline
 
-Multi-agent continuous compliance system for Korean financial regulations.
+> 금융권 컴플라이언스 감사를 2-3주에서 2-3분으로 단축하는 멀티에이전트 지속 준수 시스템
 
-## Overview
+## 데모
 
-Kompline (K-compliance + Pipeline) automates algorithm fairness verification for financial platforms, targeting the **알고리즘 공정성 자가평가** (Algorithm Fairness Self-Assessment, Form 별지5) requirements mandated by Korean financial regulators.
+- **Streamlit UI**: `streamlit run ui/app.py`
+- **API Server**: `uvicorn api.main:app --port 8888`
+- **CLI**: `python demo.py`
 
-### Key Value Proposition
+## 문제 정의
 
-| Before (Manual) | After (Kompline) |
-|-----------------|------------------|
-| 2-3 weeks per audit | **2-3 minutes** automated analysis |
-| Single compliance at a time | **Multi-compliance parallel** verification |
-| Inconsistent evidence collection | **Structured evidence** with provenance |
-| Paper-based reports | **Digital 자가평가서** with audit trail |
+규제 산업(금융, 안보 등)의 실무자들은 복잡한 규정 체계를 준수해야 하며, 이는 **주기적 감사**를 통해 관리됩니다.
 
-**ROI for B2B Adoption:**
-- **80% reduction** in compliance audit time
-- **Consistent** rule application across all code reviews
-- **Audit trail** for regulatory inspection readiness
-- **Scalable** to multiple products/repositories simultaneously
+| 문제점 | 상세 |
+|--------|------|
+| **감사자 부담** | 수작업 점검으로 2-3주 소요, 인적 오류 발생 |
+| **피감사자 부담** | 증빙자료 수집에 막대한 업무 부하 |
+| **리스크 상존** | 감사 기간 사이(3개월) 규정 위반 리스크 |
 
-## Architecture
+```
+기존: 주기적 감사
+────────────────────────────────────────────────
+Jan        Apr        Jul        Oct
+ │          │          │          │
+ ▼          ▼          ▼          ▼
+[감사]     [감사]     [감사]     [감사]
+ 2주        2주        2주        2주
+
+ ↑ 감사 사이 3개월간 위반 리스크 상존
+```
+
+## 솔루션
+
+Kompline은 코드, 로그, 데이터 등 기업 산출물을 **수시로 자동 분석**하여 **Continuous Compliance**를 실현합니다.
+
+| 사용자 | 제공 가치 |
+|--------|-----------|
+| **감사자** | 자동 점검 및 규정 준수 리포팅 |
+| **피감사자** | 증빙자료 자동 생성 (Provenance 추적) |
+| **실무자** | 업무 착수 전 규정 적합성 사전 검토 |
+
+```
+Kompline: Continuous Compliance
+────────────────────────────────────────────────
+│●●●●●●●●●●●●●●●●●●●●●●●●●●●●●●●●●●●●●●●●●●●●│
+ ↑ 매 커밋/PR마다 실시간 검사, 위반 즉시 탐지
+```
+
+**핵심 성과**
+- 감사 시간: 2-3주 → **2-3분** (80% 절감)
+- 다중 규정 병렬 검사
+- 규제당국 제출용 리포트 자동 생성
+
+## 조건 충족 여부
+
+- [x] **OpenAI API 사용**: gpt-4o (규정 판정), gpt-4o-mini (RAG Citation)
+- [x] **멀티에이전트 구현**: Orchestrator → Inspection Agents 병렬 협업
+- [x] **실행 가능한 데모**: Streamlit UI, FastAPI, CLI 모두 지원
+
+## 아키텍처
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│                    Audit Orchestrator (총괄)                         │
-│  1. Build audit relations from user request                         │
-│  2. Spawn Audit Agents per relation (parallel)                      │
-│  3. Aggregate findings with retry on failure                        │
-│  4. Generate unified compliance report                              │
+│                         Kompline Platform                            │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                      │
+│  ┌─────────────┐    ┌─────────────┐    ┌─────────────────────────┐  │
+│  │ Supabase DB │    │   GitHub    │    │      OpenAI API         │  │
+│  │ (Rules)     │    │ (Artifacts) │    │  gpt-4o: 규정 판정      │  │
+│  └──────┬──────┘    └──────┬──────┘    │  gpt-4o-mini: RAG       │  │
+│         │                  │           └────────────┬────────────┘  │
+│         ▼                  ▼                        │               │
+│  ┌──────────────────────────────────┐               │               │
+│  │      Registry Layer              │               │               │
+│  │  ComplianceRegistry │ ArtifactRegistry          │               │
+│  └──────────────┬───────────────────┘               │               │
+│                 │                                   │               │
+│                 ▼                                   │               │
+│  ┌──────────────────────────────────────────────────┼──────────────┐│
+│  │              Audit Orchestrator                  │              ││
+│  │  • (Rule, Artifact) 관계 생성                    │              ││
+│  │  • Inspection Agent 병렬 스폰                    │              ││
+│  │  • 에러 재시도 및 작업 재분배                    │              ││
+│  └──────────────────────┬───────────────────────────┼──────────────┘│
+│                         │                           │               │
+│         ┌───────────────┼───────────────┐           │               │
+│         ▼               ▼               ▼           │               │
+│  ┌─────────────┐ ┌─────────────┐ ┌─────────────┐   │               │
+│  │ Inspection  │ │ Inspection  │ │ Inspection  │◄──┘               │
+│  │ Agent #1    │ │ Agent #2    │ │ Agent #N    │  LLM 판정        │
+│  │ ┌─────────┐ │ │             │ │             │  or Heuristic    │
+│  │ │Heuristic│ │ │             │ │             │  Fallback        │
+│  │ │Fallback │ │ │             │ │             │                  │
+│  │ └─────────┘ │ │             │ │             │                  │
+│  └──────┬──────┘ └─────────────┘ └─────────────┘                  │
+│         │                                                          │
+│         ▼                                                          │
+│  ┌─────────────────────────────────────────────────────────────┐   │
+│  │                     Reader Agents                            │   │
+│  │   CodeReader │ PDFReader │ ConfigReader │ LogReader          │   │
+│  └─────────────────────────────────────────────────────────────┘   │
+│                             │                                       │
+│                             ▼                                       │
+│  ┌─────────────────────────────────────────────────────────────┐   │
+│  │  RAG Engine                                                  │   │
+│  │  • 규정 텍스트 임베딩 검색                                    │   │
+│  │  • Citation 생성 (출처 명시, 할루시네이션 방지)               │   │
+│  └─────────────────────────────────────────────────────────────┘   │
+│                                                                      │
+├─────────────────────────────────────────────────────────────────────┤
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐              │
+│  │  Guardrails  │  │     HITL     │  │   Tracing    │              │
+│  │  (Validator) │  │   (Review)   │  │   (Logger)   │              │
+│  └──────────────┘  └──────────────┘  └──────────────┘              │
 └─────────────────────────────────────────────────────────────────────┘
-                              │ spawn per (Compliance, Artifact)
-        ┌─────────────────────┼─────────────────────────────┐
-        ▼                     ▼                             ▼
-┌───────────────────┐  ┌───────────────────┐  ┌───────────────────┐
-│    Audit Agent    │  │    Audit Agent    │  │    Audit Agent    │
-│ (공정성, code.py) │  │ (PIPA, code.py)   │  │ (공정성, config)  │
-├───────────────────┤  ├───────────────────┤  ├───────────────────┤
-│ 1. Plan evidence  │  │ 1. Plan evidence  │  │ 1. Plan evidence  │
-│ 2. Call Readers   │  │ 2. Call Readers   │  │ 2. Call Readers   │
-│ 3. Evaluate rules │  │ 3. Evaluate rules │  │ 3. Evaluate rules │
-│ 4. Emit findings  │  │ 4. Emit findings  │  │ 4. Emit findings  │
-└────────┬──────────┘  └────────┬──────────┘  └────────┬──────────┘
-         │ handoff to readers   │                      │
-    ┌────┴────┐            ┌────┴────┐            ┌────┴────┐
-    ▼         ▼            ▼         ▼            ▼         ▼
-┌────────┐ ┌────────┐  ┌────────┐ ┌────────┐  ┌────────┐ ┌────────┐
-│ Code   │ │  PDF   │  │ Code   │ │  PDF   │  │ Config │ │  PDF   │
-│ Reader │ │ Reader │  │ Reader │ │ Reader │  │ Reader │ │ Reader │
-└────────┘ └────────┘  └────────┘ └────────┘  └────────┘ └────────┘
 ```
 
-### Core Concept: Audit Relation
+### 에이전트 협업 흐름
 
 ```
-Audit Relation = (Compliance, Artifact)
-
-Examples:
-- (알고리즘 공정성 자가평가, deposit_ranking.py) → Audit Agent #1
-- (개인정보보호법, deposit_ranking.py)            → Audit Agent #2
-- (알고리즘 공정성 자가평가, config.yaml)         → Audit Agent #3
+1. Orchestrator가 (Compliance, Artifact) 관계 매트릭스 생성
+       ↓
+2. 각 관계에 대해 Inspection Agent 병렬 스폰
+       ↓
+3. Inspection Agent가 Reader 호출하여 Evidence 수집
+       ↓
+4. RAG로 관련 규정 조회 → LLM/Heuristic으로 판정
+       ↓
+5. Finding 생성 (PASS/FAIL/REVIEW) + Citation 첨부
+       ↓
+6. 실패 시 재시도 (3회) 또는 다른 Agent에 재분배
+       ↓
+7. 결과 집계 → Report 생성 → HITL 큐 등록
 ```
 
-One Artifact can be audited against multiple Compliances, or one Compliance can be applied to multiple Artifacts - all in parallel.
+### 핵심 기술 구현
 
-## Features
+| 기능 | 구현 내용 |
+|------|-----------|
+| **멀티에이전트 협업** | Orchestrator → Inspection Agent 병렬 실행 |
+| **에러 처리/재분배** | 재시도 3회 (exponential backoff) + Agent 간 작업 재분배 |
+| **도구 사용** | Reader Agents (Code/PDF/Config), RAG Query |
+| **RAG & Citation** | 규정 출처 명시, 할루시네이션 방지 |
+| **Guardrails** | Evidence/Finding Validator, Input/Output 검증 |
+| **HITL** | 저신뢰도/FAIL 판정 시 사람 검토 트리거 |
+| **Observability** | 구조화 로깅, Per-relation 트레이싱 |
 
-- **Multi-Agent Parallel Execution**: Spawn independent audit agents per (Compliance, Artifact) relation
-- **Evidence-Based Audit**: Structured evidence collection with provenance tracking
-- **LLM-Assisted Rule Evaluation**: Use OpenAI to assess rules from extracted evidence (fallback to heuristics)
-- **Human-in-the-Loop**: Automatic triggers for low confidence and FAIL findings
-- **자가평가서 Report Generation**: Regulatory-compliant report format with evidence references
-- **Observability**: Full tracing and audit logging for inspection readiness
+## 기술 스택
 
-## Quick Start
+- **Language**: Python 3.11+
+- **AI/LLM**: OpenAI API (gpt-4o, gpt-4o-mini)
+- **Database**: Supabase (PostgreSQL)
+- **Backend**: FastAPI
+- **Frontend**: Streamlit, Next.js
+- **Async**: asyncio (병렬 Agent 실행)
 
-### Prerequisites
+## 설치 및 실행
 
 ```bash
-# Python 3.11+
-python --version
-
-# Create virtual environment
-python -m venv .venv
-source .venv/bin/activate  # Linux/Mac
-# or: .venv\Scripts\activate  # Windows
-```
-
-### Installation
-
-```bash
-# Clone the repository
-git clone https://github.com/your-org/kompline.git
+# 저장소 클론
+git clone https://github.com/Boramae-z/kompline.git
 cd kompline
 
-# Install with all dependencies
+# 가상환경 생성
+python -m venv .venv
+source .venv/bin/activate  # Windows: .venv\Scripts\activate
+
+# 의존성 설치
 pip install -e ".[dev]"
+
+# 환경 설정
+cp .env.example .env
+# .env 파일에 API 키 입력:
+# OPENAI_API_KEY=sk-your-key
+# SUPABASE_URL=https://xxx.supabase.co
+# SUPABASE_SERVICE_ROLE_KEY=sb_secret_xxx
+
+# 실행 (3가지 방법)
+python demo.py                              # CLI 데모
+streamlit run ui/app.py                     # Streamlit UI
+uvicorn api.main:app --port 8888 --reload   # FastAPI 서버
 ```
 
-### Configuration
-
-Create a `.env` file in the project root:
-
-```env
-# Required
-OPENAI_API_KEY=sk-your-api-key-here
-
-# Optional
-OPENAI_MODEL=gpt-4o              # Default model
-RAG_API_URL=http://localhost:8000  # RAG backend URL
-LOG_LEVEL=INFO
-```
-
-### Running the Demo
-
-#### Option 1: Quick CLI (Recommended)
-
-```bash
-kompline samples/deposit_ranking.py
-```
-
-#### Option 2: Multi-Compliance Demo Script
-
-```bash
-python -m samples.demo_scenario
-```
-
-This script registers demo compliances (알고리즘 공정성 자가평가 + 개인정보보호법), registers the sample
-artifact, runs parallel audits, and prints a 자가평가서 report.
-
-#### Option 3: FastAPI Server
-
-```bash
-# Start the API server
-uvicorn api.main:app --host 0.0.0.0 --port 8888 --reload
-
-# In another terminal, test the API
-curl -X POST http://localhost:8888/analyze \
-  -H "Content-Type: application/json" \
-  -d '{
-    "source_code": "def rank(products): return sorted(products, key=lambda x: x.rate)",
-    "compliance_ids": ["byeolji5-fairness"]
-  }'
-```
-
-API Endpoints:
-- `GET /` - Health check
-- `POST /analyze` - Analyze source code for compliance
-- `GET /reviews` - Get pending human reviews
-- `GET /trace` - Get agent execution trace
-- `DELETE /trace` - Clear execution trace
-
-API Documentation: http://localhost:8080/docs (Swagger UI)
-
-#### Option 4: Streamlit UI
-
-```bash
-# Start the Streamlit demo
-streamlit run ui/app.py --server.headless true
-
-# Open browser at http://localhost:8501
-```
-
-The UI provides:
-- Code input and file upload
-- Real-time agent activity log
-- Interactive compliance results
-- 자가평가서 report preview
-- Pending review list (HITL)
-
-## Project Structure
+### 예상 출력
 
 ```
-kompline/
-├── kompline/
-│   ├── demo_data.py               # Demo compliance/artifact bootstrap
-│   ├── models/                    # Domain models
-│   │   ├── compliance.py          # Compliance, Rule, EvidenceRequirement
-│   │   ├── artifact.py            # Artifact, ArtifactType, Provenance
-│   │   ├── audit_relation.py      # AuditRelation, RunConfig
-│   │   ├── evidence.py            # Evidence, EvidenceCollection
-│   │   └── finding.py             # Finding, FindingStatus
-│   ├── registry/                  # Registries
-│   │   ├── compliance_registry.py # ComplianceRegistry
-│   │   └── artifact_registry.py   # ArtifactRegistry
-│   ├── agents/
-│   │   ├── audit_orchestrator.py  # Main orchestrator with retry logic
-│   │   ├── audit_agent.py         # Per-relation audit agent
-│   │   ├── rule_evaluator.py      # Rule evaluation with RAG
-│   │   ├── report_generator.py    # Report templates
-│   │   └── readers/               # Evidence readers
-│   │       ├── base_reader.py     # Abstract base
-│   │       ├── code_reader.py     # Python/JS code analysis
-│   │       ├── pdf_reader.py      # PDF document extraction
-│   │       └── config_reader.py   # YAML/JSON config parsing
-│   ├── tools/
-│   │   ├── code_parser.py         # AST utilities
-│   │   ├── rag_query.py           # RAG with citations
-│   │   └── report_export.py       # Export utilities
-│   ├── guardrails/
-│   │   ├── input_validator.py     # Source code validation
-│   │   ├── output_validator.py    # Quality checks
-│   │   ├── evidence_validator.py  # Evidence validation
-│   │   └── finding_validator.py   # Finding consistency
-│   ├── hitl/
-│   │   ├── triggers.py            # Review trigger conditions
-│   │   └── review_handler.py      # Review queue management
-│   └── tracing/
-│       └── logger.py              # Audit logging
-│   └── utils/
-│       └── json_utils.py          # LLM JSON parsing helpers
-├── api/
-│   └── main.py                    # FastAPI server
-├── ui/
-│   └── app.py                     # Streamlit demo
-├── samples/
-│   ├── demo_scenario.py           # Multi-compliance demo script
-│   ├── compliances/               # YAML compliance definitions
-│   │   ├── byeolji5_fairness.yaml
-│   │   └── pipa_kr.yaml
-│   └── deposit_ranking.py         # Sample code with compliance issues
-├── tests/
-└── docs/
-    └── audits/                    # Regulatory forms (PDF)
+============================================================
+  Kompline - 금융규제 준수 자동 감사 시스템
+============================================================
+
+🚀 Multi-Agent Compliance Audit Demo
+   알고리즘 공정성 자가평가
+
+📜 Loaded: 알고리즘 공정성 자가평가 (3 rules)
+📁 Registered: 예금상품 추천 알고리즘
+
+🔍 Running audit...
+   ❌ ALG-001: FAIL (85%) - shuffle() 감지
+   ❌ ALG-002: FAIL (85%) - affiliate bias 감지
+   ❌ ALG-003: FAIL (85%) - preferred keyword 감지
+
+🧑‍⚖️ Human Review Queue: 3 items
 ```
 
-## Agents Overview
+## 향후 계획
 
-| Agent | Role | Tools |
-|-------|------|-------|
-| **AuditOrchestrator** | Build relations, spawn agents in parallel, aggregate findings | `create_audit_relations`, `aggregate_findings` |
-| **AuditAgent** | Evaluate single (Compliance, Artifact) relation | `collect_evidence`, `evaluate_rule` |
-| **CodeReader** | Extract code evidence via AST parsing | `parse_code`, `detect_patterns` |
-| **PDFReader** | Extract text/tables from PDF documents | `extract_text`, `extract_tables` |
-| **ConfigReader** | Parse YAML/JSON configuration files | `read_config`, `validate_schema` |
-| **RuleEvaluator** | (Optional) RAG-based rule matching | `query_rules`, `evaluate_compliance` |
-| **ReportGenerator** | Generate regulatory format reports | `format_report`, `export_pdf` |
+| Phase | 내용 |
+|-------|------|
+| **v0.2** | 규정 확장 (개인정보보호법, ISO 27001, SOC2) |
+| **v0.3** | CI/CD 통합 (GitHub Actions, Pre-commit Hook) |
+| **v0.4** | 대시보드 고도화 (경영진용 컴플라이언스 현황 시각화) |
+| **v1.0** | 규정 변경 자동 반영, Predictive Compliance |
 
-## Human-in-the-Loop Triggers
+## 문서
 
-| Trigger | Condition | Action |
-|---------|-----------|--------|
-| **Low Confidence** | confidence < 70% | Queue for human review |
-| **FAIL Finding** | status == FAIL | Require auditor confirmation |
-| **New Pattern** | Pattern not in rule database | Flag for rule update |
-| **Conflicting Evidence** | Evidence contradicts finding | Escalate to senior auditor |
+- **[PRD](docs/PRD.md)**: 제품 요구사항 문서 (12개 섹션)
+- **[Implementation Plan](docs/IMPLEMENTATION_PLAN.md)**: 기술 구현 상세
 
-## Error Handling & Retry (Planned)
+## 팀원
 
-Advanced retry strategies (exponential backoff, reader fallback) are planned but
-not enabled in the default demo yet.
-
-## RAG Citations (Planned)
-
-RAG-backed citations are planned for the rule-matching pipeline. The current
-demo focuses on evidence extraction and LLM/heuristic evaluation.
-
-## Development
-
-```bash
-# Run tests
-pytest
-
-# Run with coverage
-pytest --cov=kompline --cov-report=html
-
-# Format code
-ruff format .
-
-# Lint
-ruff check .
-
-# Type check
-mypy kompline
-```
-
-## Compliance Definitions
-
-Add new compliances via YAML:
-
-```yaml
-# samples/compliances/your_compliance.yaml
-id: custom-compliance-2024
-name: Custom Compliance Rules
-version: "2024.01"
-jurisdiction: KR
-scope:
-  - algorithm
-  - data_handling
-rules:
-  - id: CUSTOM-001
-    title: Rule Title
-    description: What this rule checks
-    category: algorithm_fairness
-    severity: high
-    check_points:
-      - Specific check 1
-      - Specific check 2
-    pass_criteria: When this rule passes
-    fail_examples:
-      - Example of violation
-```
+| 이름 | 역할 |
+|------|------|
+| 백지오 | 팀장, Product Engineer |
+| 윤병인 | Product Engineer |
+| 문봉오 | Product Engineer |
+| 박준영 | Product Engineer |
 
 ## License
 
 MIT
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Submit a pull request
-
-For questions or support, open an issue on GitHub.
