@@ -48,20 +48,47 @@ def test_upload_ingest_query(tmp_path, monkeypatch):
     appmod.DB_PATH = tmp_path / "rag.sqlite"
 
     def fake_post(url, headers=None, json=None, timeout=60):
-        inputs = json.get("input", [])
-        data = [
-            {"index": i, "embedding": [float(i + 1), 0.0, 0.0]}
-            for i in range(len(inputs))
-        ]
+        if url.endswith("/embeddings"):
+            inputs = json.get("input", [])
+            data = [
+                {"index": i, "embedding": [float(i + 1), 0.0, 0.0]}
+                for i in range(len(inputs))
+            ]
 
-        class Resp:
-            status_code = 200
-            text = "ok"
+            class Resp:
+                status_code = 200
+                text = "ok"
 
-            def json(self):
-                return {"data": data}
+                def json(self):
+                    return {"data": data}
 
-        return Resp()
+            return Resp()
+
+        if url.endswith("/responses"):
+            is_json_schema = bool(json.get("text", {}).get("format", {}).get("type") == "json_schema")
+            schema_name = json.get("text", {}).get("format", {}).get("name")
+
+            class Resp:
+                status_code = 200
+                text = "ok"
+
+                def json(self):
+                    if is_json_schema and schema_name == "semantic_extract":
+                        return {
+                            "output_text": (
+                                "{\"semantic_markdown\":\"# Semantic\\n- Entity: Test\","
+                                "\"summary_markdown\":\"# Summary\\nTest\"}"
+                            )
+                        }
+                    if is_json_schema and schema_name == "compliance_extract":
+                        return {
+                            "output_text": "{\"compliance_markdown\":\"# Compliance\\n- Control: X\"}"
+                        }
+                    return {"output_text": "# Title\n\nHello PDF"}
+
+            return Resp()
+
+        raise AssertionError(f"Unexpected URL: {url}")
 
     monkeypatch.setattr(appmod.requests, "post", fake_post)
 
@@ -82,7 +109,13 @@ def test_upload_ingest_query(tmp_path, monkeypatch):
     assert "Hello" in data["results"][0]["text"]
 
     conn = sqlite3.connect(appmod.DB_PATH)
-    row = conn.execute("SELECT filename, markdown_text FROM documents").fetchone()
+    row = conn.execute(
+        "SELECT filename, markdown_text, semantic_markdown, summary_markdown, compliance_markdown "
+        "FROM documents"
+    ).fetchone()
     conn.close()
     assert row[0] == "test.pdf"
-    assert "Page 1" in row[1]
+    assert "Hello PDF" in row[1]
+    assert "Semantic" in row[2]
+    assert "Summary" in row[3]
+    assert "Compliance" in row[4]
