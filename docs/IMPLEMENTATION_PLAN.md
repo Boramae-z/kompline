@@ -1,59 +1,53 @@
-# Kompline Implementation Plan (Completed)
+# Kompline Implementation Plan (Revised)
 
 ## Overview
 - **Product**: Kompline (K-compliance + Pipeline)
 - **Purpose**: Multi-agent continuous compliance system for Korean financial regulations
 - **Target**: Algorithm fairness verification for deposit platforms (별지5 자가평가서)
-- **Model**: (Compliance, Artifact) relation 기반 감사
-- **Status**: ✅ Implementation Complete
+- **Model**: (ComplianceItem, Artifact) relation 기반 감사
+- **Status**: 🔧 In progress (compliance_item 기반 설계로 업데이트)
 
-## Core Concept: Audit Relation
+## Core Concept: Audit Relation (ComplianceItem 단위)
 
 ```
-Audit Relation = (Compliance, Artifact)
+Audit Relation = (ComplianceItem, Artifact)
 
 예시:
-- (개인정보보호법, user-service repo) → Audit Agent #1
-- (별지5 알고리즘공정성, user-service repo) → Audit Agent #2
-- (SOC2, infrastructure repo) → Audit Agent #3
+- (PIPA-001 최소수집, user-service repo) → Inspection Agent #1
+- (PIPA-002 보유기간, user-service repo) → Inspection Agent #2
+- (BYEOLJI5-ALG-003 무작위화 공개, ranking repo) → Inspection Agent #3
 ```
 
-하나의 Artifact에 여러 Compliance를 적용하거나, 하나의 Compliance를 여러 Artifact에 적용 가능.
+하나의 Compliance는 여러 ComplianceItem으로 분해되며,
+각 ComplianceItem은 독립적으로 감사를 수행하고 결과를 병합해 보고서를 작성.
 
 ## Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
 │                    Audit Orchestrator (총괄)                         │
-│  1. Build audit relations from user request                         │
-│  2. Spawn Audit Agents per relation (parallel)                      │
-│  3. Retry with exponential backoff on failure                       │
-│  4. Redistribute to fallback strategies if needed                   │
-│  5. Aggregate findings into unified report                          │
+│  1. Build relations per ComplianceItem × Artifact                    │
+│  2. Spawn Inspection Agents (parallel)                               │
+│  3. Aggregate item-level findings into compliance report             │
 └─────────────────────────────────────────────────────────────────────┘
-                              │ spawn per relation
+                              │ spawn per item
         ┌─────────────────────┼─────────────────────────────┐
         ▼                     ▼                             ▼
 ┌───────────────────┐  ┌───────────────────┐  ┌───────────────────┐
-│    Audit Agent    │  │    Audit Agent    │  │    Audit Agent    │
-│ (C₁, A₁)          │  │ (C₁, A₂)          │  │ (C₂, A₁)          │
+│ Inspection Agent  │  │ Inspection Agent  │  │ Inspection Agent  │
+│ (Item₁, A₁)       │  │ (Item₂, A₁)       │  │ (Item₃, A₂)       │
 ├───────────────────┤  ├───────────────────┤  ├───────────────────┤
-│ 1. Plan evidence  │  │ 1. Plan evidence  │  │ 1. Plan evidence  │
-│ 2. Call Readers   │  │ 2. Call Readers   │  │ 2. Call Readers   │
-│ 3. LLM + Heuristic│  │ 3. LLM + Heuristic│  │ 3. LLM + Heuristic│
-│ 4. Emit findings  │  │ 4. Emit findings  │  │ 4. Emit findings  │
-│    with citations │  │    with citations │  │    with citations │
+│ 1. Code search    │  │ 1. Code search    │  │ 1. Code search    │
+│ 2. Collect evidence via Readers                           │
+│ 3. Evaluate single item (LLM/Heuristic)                   │
 └────────┬──────────┘  └────────┬──────────┘  └────────┬──────────┘
-         │ handoff to readers   │                      │
+         │ call search/reader agents                      │
     ┌────┴────┐            ┌────┴────┐            ┌────┴────┐
     ▼         ▼            ▼         ▼            ▼         ▼
-┌────────┐ ┌────────┐  ┌────────┐ ┌────────┐  ┌────────┐ ┌────────┐
-│ Code   │ │  PDF   │  │ Code   │ │ Log/DB │  │  PDF   │ │ Config │
-│ Reader │ │ Reader │  │ Reader │ │ Reader │  │ Reader │ │ Reader │
-└────────┘ └────────┘  └────────┘ └────────┘  └────────┘ └────────┘
+CodeSearch  CodeReader   CodeSearch  PDFReader  CodeSearch  ConfigReader
 ```
 
-## Core Abstractions (Implemented)
+## Core Abstractions (Proposed)
 
 ### 1. Compliance (규정) - `kompline/models/compliance.py`
 
@@ -65,13 +59,28 @@ class Compliance:
     version: str                 # "2024.01"
     jurisdiction: str            # "KR", "global"
     scope: list[str]             # ["algorithm", "data_handling"]
-    rules: list[Rule]            # 평가 규칙들
+    items: list[ComplianceItem]  # 규정 내 세부 항목들
     evidence_requirements: list[EvidenceRequirement]
     report_template: str         # 보고서 템플릿 ID
     description: str             # 규정 설명
 ```
 
-### 2. Artifact (감사 대상) - `kompline/models/artifact.py`
+### 2. ComplianceItem (규정 항목) - `kompline/models/compliance_item.py`
+
+```python
+@dataclass
+class ComplianceItem:
+    id: str                      # "PIPA-001"
+    compliance_id: str           # 상위 규정 ID
+    title: str                   # "최소 수집 원칙"
+    description: str
+    category: str
+    severity: str
+    evidence_requirements: list[EvidenceRequirement]
+    check_points: list[str]
+```
+
+### 3. Artifact (감사 대상) - `kompline/models/artifact.py`
 
 ```python
 @dataclass
@@ -85,13 +94,13 @@ class Artifact:
     tags: list[str]              # 분류 태그
 ```
 
-### 3. AuditRelation (감사 관계) - `kompline/models/audit_relation.py`
+### 4. AuditRelation (감사 관계) - `kompline/models/audit_relation.py`
 
 ```python
 @dataclass
 class AuditRelation:
     id: str                      # "rel-001"
-    compliance_id: str
+    compliance_item_id: str
     artifact_id: str
     status: AuditStatus          # PENDING, RUNNING, COMPLETED, FAILED
     evidence_collected: EvidenceCollection
@@ -100,7 +109,7 @@ class AuditRelation:
     error_message: str | None    # 실패 시 오류 메시지
 ```
 
-### 4. Evidence (증거) - `kompline/models/evidence.py`
+### 5. Evidence (증거) - `kompline/models/evidence.py`
 
 ```python
 @dataclass
@@ -115,7 +124,7 @@ class Evidence:
     collected_at: datetime
 ```
 
-### 5. Finding (발견사항) - `kompline/models/finding.py`
+### 6. Finding (발견사항) - `kompline/models/finding.py`
 
 ```python
 @dataclass
@@ -133,7 +142,7 @@ class Finding:
     review_status: ReviewStatus  # PENDING, APPROVED, REJECTED, MODIFIED
 ```
 
-### 6. Citation (출처 인용) - `kompline/models/finding.py`
+### 7. Citation (출처 인용) - `kompline/models/finding.py`
 
 ```python
 @dataclass
@@ -145,25 +154,23 @@ class Citation:
     section: str | None          # 섹션/조항 참조
 ```
 
-## Agent Definitions (Implemented)
+## Agent Definitions (Proposed)
 
 ### 1. Audit Orchestrator - `kompline/agents/audit_orchestrator.py`
-- **역할**: 전체 감사 워크플로우 조율
-- **특징**:
-  - `RetryConfig`: 지수 백오프 + jitter
-  - `_run_with_retry()`: 자동 재시도
-  - `_attempt_redistribution()`: 실패 시 대안 전략
-  - Parallel/Sequential 실행 지원
+- **역할**: ComplianceItem 단위 관계 생성 + 병렬 실행 + 결과 병합
 
-### 2. Audit Agent - `kompline/agents/audit_agent.py`
-- **역할**: 단일 (Compliance, Artifact) 관계 감사
+### 2. Inspection Agent - `kompline/agents/inspection_agent.py`
+- **역할**: 단일 ComplianceItem × Artifact 검수
 - **특징**:
-  - LLM 평가 + Heuristic 폴백
-  - `use_ast`: AST 파싱 vs 텍스트 분석 전환
-  - `critical_only`: 중요 규칙만 평가 (축소 범위)
-  - Citation 자동 생성
+  - CodeSearch Agent 호출로 관련 코드 범위 탐색
+  - Reader Agents로 증거 수집
+  - LLM/Heuristic로 단일 항목 판정
 
-### 3. Reader Agents - `kompline/agents/readers/`
+### 3. Code Search Agent - `kompline/agents/code_search_agent.py`
+- **역할**: 컴플라이언스 항목의 키워드/패턴으로 코드 범위 탐색
+- **출력**: 파일 경로 + 라인 범위 + 이유
+
+### 4. Reader Agents - `kompline/agents/readers/`
 
 | Reader | 파일 | 기능 |
 |--------|------|------|
@@ -182,7 +189,7 @@ class Citation:
 - Markdown/JSON 내보내기
 - Citation 표시
 
-## Key Features Implemented
+## Key Features (Planned / Partial)
 
 | Feature | 구현 상태 | 파일 |
 |---------|----------|------|
@@ -194,6 +201,111 @@ class Citation:
 | **Finding Validation** | ✅ | `guardrails/finding_validator.py` |
 | **HITL Triggers** | ✅ | `hitl/triggers.py` |
 | **Tracing** | ✅ | `tracing/logger.py` |
+| **Supabase Integration** | ✅ | `providers/supabase_provider.py` |
+
+## Supabase Integration (New)
+
+### Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                     Supabase DB                                  │
+│   ┌─────────────┐    ┌──────────────────┐                       │
+│   │  documents  │───→│ compliance_items │                       │
+│   └─────────────┘    └──────────────────┘                       │
+└────────────────────────────┬────────────────────────────────────┘
+                             │ REST API
+                             ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                   SupabaseProvider                               │
+│   • fetch_items_by_document(document_id)                         │
+│   • fetch_items_by_type(item_type)                               │
+│   • fetch_all_items(language)                                    │
+│   • map_row_to_rule() → Rule 객체 변환                            │
+└────────────────────────────┬────────────────────────────────────┘
+                             │
+                             ▼
+┌─────────────────────────────────────────────────────────────────┐
+│              ComplianceRegistry.load_from_supabase()             │
+│   • 규정 로드 → Compliance 객체 생성 → Registry 등록              │
+└────────────────────────────┬────────────────────────────────────┘
+                             │
+                             ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                    Audit Workflow                                │
+│   Compliance → AuditOrchestrator → Inspection Agents → Report   │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### DB Schema
+
+```sql
+-- documents
+- id (bigserial, PK)
+- filename, markdown_text, pdf_blob, page_count, language, created_at
+
+-- compliance_items
+- id (bigserial, PK)
+- document_id (FK → documents.id)
+- document_title, item_index, item_type, item_text
+- page, section, item_json (jsonb), language, created_at
+```
+
+### Key Components
+
+| Component | File | Purpose |
+|-----------|------|---------|
+| **SupabaseProvider** | `kompline/providers/supabase_provider.py` | REST API로 DB 조회, Rule 변환 |
+| **ComplianceItemRow** | `kompline/providers/supabase_provider.py` | DB 행 데이터클래스 |
+| **load_from_supabase()** | `kompline/registry/compliance_registry.py` | DB에서 Compliance 로드 |
+
+### Usage
+
+```python
+from kompline.registry import get_compliance_registry
+import asyncio
+
+async def main():
+    registry = get_compliance_registry()
+
+    # 방법 1: 특정 문서의 규정 로드
+    compliance = await registry.load_from_supabase(
+        document_id=1,
+        language="ko",
+        compliance_id="byeolji5-db",
+    )
+
+    # 방법 2: 특정 타입의 규정 로드
+    compliance = await registry.load_from_supabase(
+        item_type="algorithm_fairness",
+    )
+
+    # 방법 3: 전체 규정 로드
+    compliance = await registry.load_from_supabase(language="ko")
+
+    print(f"Loaded {len(compliance.rules)} rules")
+
+asyncio.run(main())
+```
+
+### Environment Variables
+
+```bash
+# .env
+SUPABASE_URL=https://xxx.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=sb_secret_xxx
+```
+
+### item_type → RuleCategory Mapping
+
+| DB item_type | RuleCategory |
+|--------------|--------------|
+| `algorithm_fairness`, `fairness` | ALGORITHM_FAIRNESS |
+| `data_handling` | DATA_HANDLING |
+| `transparency` | TRANSPARENCY |
+| `disclosure` | DISCLOSURE |
+| `privacy` | PRIVACY |
+| `security` | SECURITY |
 
 ## Human-in-the-Loop (Implemented)
 
@@ -259,6 +371,14 @@ Finding (FAIL/REVIEW) → ReviewRequest 생성 → Queue에 추가
 - [x] CLI runner (`kompline/runner.py`)
 - [x] README 업데이트
 
+### Phase 8: Supabase Integration ✅
+- [x] SupabaseProvider (REST API 기반 DB 조회)
+- [x] ComplianceItemRow 데이터클래스
+- [x] ComplianceRegistry.load_from_supabase() 메서드
+- [x] item_type → RuleCategory 매핑
+- [x] 캐싱 (TTL 기반)
+- [x] 단위 테스트 (23개 통과)
+
 ## File Structure (Current)
 
 ```
@@ -274,8 +394,12 @@ kompline/
 │   │   └── finding.py             # Finding, Citation, FindingStatus
 │   ├── registry/                  # Registries
 │   │   ├── __init__.py
-│   │   ├── compliance_registry.py # YAML 로드 지원
+│   │   ├── compliance_registry.py # YAML 로드 + Supabase 로드 지원
 │   │   └── artifact_registry.py   # 파일/저장소 등록
+│   ├── providers/                 # External data providers
+│   │   ├── __init__.py
+│   │   ├── github_provider.py     # GitHub API
+│   │   └── supabase_provider.py   # Supabase REST API
 │   ├── agents/
 │   │   ├── __init__.py
 │   │   ├── audit_orchestrator.py  # RetryConfig, 재분배 전략
@@ -329,7 +453,10 @@ kompline/
 │   ├── deposit_ranking.py         # 샘플 코드 (위반 포함)
 │   └── demo_scenario.py           # 데모 시나리오
 ├── tests/
-│   └── __init__.py
+│   ├── __init__.py
+│   ├── test_supabase_provider.py      # SupabaseProvider 단위 테스트
+│   ├── test_compliance_registry_supabase.py  # Registry Supabase 테스트
+│   └── test_supabase_integration.py   # 통합 테스트 (DB 필요)
 ├── docs/
 │   ├── IMPLEMENTATION_PLAN.md     # 이 문서
 │   └── audits/                    # 규제 양식 PDF
@@ -348,6 +475,8 @@ pip install -e .
 
 # 2. Set environment variables
 export OPENAI_API_KEY=sk-your-key
+export SUPABASE_URL=https://xxx.supabase.co
+export SUPABASE_SERVICE_ROLE_KEY=sb_secret_xxx
 
 # 3. Run demo
 python demo.py
@@ -399,6 +528,9 @@ streamlit run ui/app.py
 - [x] 다중 규정 시나리오 통과
 - [x] Retry + 재분배 로직 동작
 - [x] RAG Citation 출력
+- [x] Supabase에서 규정 로드 (17개 항목 확인)
+- [x] SupabaseProvider 단위 테스트 (15개 통과)
+- [x] ComplianceRegistry Supabase 테스트 (8개 통과)
 
 ## Tech Stack
 
