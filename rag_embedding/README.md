@@ -71,13 +71,13 @@ curl -X POST "http://127.0.0.1:8000/query?q=hello&top_k=5"
 ```
 
 ### GET /documents
-SQLite에 저장된 문서 목록과 청크 개수를 조회합니다.
+Supabase에 저장된 문서 목록과 청크 개수를 조회합니다.
 
 ### GET /documents/{doc_id}
-문서 메타데이터, 마크다운 추출 텍스트, 시맨틱/요약/컴플라이언스 마크다운, 청크 목록을 반환합니다.
+문서 메타데이터, 마크다운 추출 텍스트, 시맨틱/요약 마크다운, 컴플라이언스 항목, 청크 목록을 반환합니다.
 
 ### GET /documents/{doc_id}/pdf
-SQLite에 저장된 원본 PDF 파일을 반환합니다.
+Supabase에 저장된 원본 PDF 파일을 반환합니다.
 
 ## 저장 구조
 
@@ -85,10 +85,11 @@ SQLite에 저장된 원본 PDF 파일을 반환합니다.
 - `rag_embedding/index.faiss`
 
 ### SQLite DB
-- `rag_embedding/rag.sqlite`
+- (Supabase Postgres)
 
 #### tables
-- `documents`: PDF 원본(blob), 파일명, 경로, 마크다운, 시맨틱/요약/컴플라이언스 마크다운
+- `documents`: PDF 원본(blob), 파일명, 경로, 마크다운, 시맨틱/요약 마크다운
+- `compliance_items`: 문서별 컴플라이언스 추출 결과(규정명/마크다운)
 - `chunks`: 문서별 청크 텍스트, 페이지, 청크 인덱스
 - `vector_map`: FAISS 인덱스 위치 → 청크 ID 매핑
 
