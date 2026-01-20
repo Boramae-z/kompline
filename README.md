@@ -23,27 +23,7 @@ Kompline은 코드·로그·데이터 등 기업 산출물을 상시 스캔해 �
 
 ## 아키텍처
 
-![Kompline Architecture](docs/architecture.svg)
-
-```mermaid
-flowchart LR
-  FE[Frontend (Next.js)];
-  CE[Compliance Extractor (FastAPI)];
-  API[User Scan Request];
-  SB[(Supabase)];
-  A[Agents (Python)];
-  O[Orchestrator];
-  V[Validator];
-  R[Reporter];
-
-  CE -->|documents, compliance_items| SB;
-  FE -->|scan 생성| SB;
-  API -->|scan_documents| SB;
-
-  A --> O -->|scan_results 생성| SB;
-  A --> V -->|PASS/FAIL 업데이트| SB;
-  A --> R -->|리포트 생성| SB;
-```
+![Kompline Architecture](architecture.png)
 
 ## 기술 스택
 
