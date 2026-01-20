@@ -2,5 +2,5 @@
 rag_embedding/uploads/
 rag_embedding/index.faiss
 rag_embedding/rag.sqlite
-rag_embedding/__pycache__/
+__pycache__
 rag_embedding/.pytest_cache/

@@ -72,9 +72,6 @@ def test_upload_ingest_query(tmp_path, monkeypatch):
         files=[("files", ("test.pdf", pdf_bytes, "application/pdf"))],
     )
     assert response.status_code == 200
-
-    response = client.post("/ingest")
-    assert response.status_code == 200
     body = response.json()
     assert body["chunk_count"] >= 1
 

@@ -165,8 +165,7 @@ def reset_db() -> None:
         conn.close()
 
 
-@app.post("/ingest")
-def ingest() -> Dict[str, Any]:
+def ingest_all() -> Dict[str, Any]:
     UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
     init_db()
     pdfs = find_pdfs(PDF_ROOT)
@@ -234,7 +233,27 @@ def ingest() -> Dict[str, Any]:
     }
 
 
-@app.post("/upload")
+@app.post(
+    "/ingest",
+    summary="PDF 임베딩 인덱싱",
+    description=(
+        "업로드/폴더 내 PDF를 읽어 텍스트 청크를 만들고 임베딩 생성 후 "
+        "FAISS 인덱스를 구축합니다. 원본 PDF, 마크다운 추출 결과, 청크 메타데이터는 "
+        "SQLite에 저장됩니다."
+    ),
+)
+def ingest() -> Dict[str, Any]:
+    return ingest_all()
+
+
+@app.post(
+    "/upload",
+    summary="PDF 업로드 및 즉시 인덱싱",
+    description=(
+        "PDF 파일을 업로드하면 즉시 인덱싱을 수행합니다. 원본 PDF, 마크다운 추출 결과, "
+        "청크 메타데이터를 SQLite에 저장하고 FAISS 인덱스를 생성합니다."
+    ),
+)
 def upload(files: List[UploadFile] = File(...)) -> Dict[str, Any]:
     UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
     saved = []
@@ -249,10 +268,20 @@ def upload(files: List[UploadFile] = File(...)) -> Dict[str, Any]:
     if not saved:
         raise HTTPException(status_code=400, detail="No PDF files uploaded")
 
-    return {"saved": saved, "count": len(saved)}
+    result = ingest_all()
+    result["uploaded"] = saved
+    result["uploaded_count"] = len(saved)
+    return result
 
 
-@app.post("/query")
+@app.post(
+    "/query",
+    summary="유사 청크 검색",
+    description=(
+        "질의 문장을 임베딩하여 FAISS에서 유사한 청크를 검색하고 "
+        "SQLite에 저장된 청크/문서 정보를 함께 반환합니다."
+    ),
+)
 def query(q: str, top_k: int = 5) -> Dict[str, Any]:
     try:
         index = load_index()
