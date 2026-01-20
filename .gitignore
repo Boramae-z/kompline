@@ -5,3 +5,5 @@ rag_embedding/rag.sqlite
 __pycache__
 rag_embedding/.pytest_cache/
 *.pdf
+agents/repo_cache/
+agents/reports/

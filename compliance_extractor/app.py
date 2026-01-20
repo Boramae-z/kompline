@@ -63,6 +63,24 @@ def detect_language(text: str) -> str:
     return "unknown"
 
 
+DEONTIC_PATTERNS = [
+    r"\b(must|shall|required to|is required to|must not|shall not|prohibited|forbidden|may|permitted|allowed|is permitted|is allowed|is prohibited|is forbidden)\b",
+    r"(하여야|해야|의무|금지|하지\s?않아야|하지\s?아니|하여서는\s?아니|할\s?수\s?있다|가능하다|허용|승인.*필요)",
+    r"(应当|必须|不得|禁止|可以|允许|需|需要)",
+    r"(しなければならない|するものとする|してはならない|禁止|できる|許可|必要)",
+]
+
+
+def _looks_normative(text: str) -> bool:
+    normalized = re.sub(r"\s+", " ", text).strip()
+    if not normalized:
+        return False
+    for pattern in DEONTIC_PATTERNS:
+        if re.search(pattern, normalized, flags=re.IGNORECASE):
+            return True
+    return False
+
+
 def pdf_to_markdown(pdf_bytes: bytes, filename: str) -> Tuple[str, int]:
     if not pdf_bytes:
         return "", 0
@@ -202,19 +220,21 @@ def extract_compliance_items(markdown_text: str) -> Tuple[str, List[Dict[str, An
         return "", []
 
     instructions = (
-        "You extract ALL regulatory and compliance requirements from the provided document. "
+        "Extract ONLY legally binding regulatory requirements from the provided document. "
         "Do NOT translate or paraphrase. Keep the original language and wording. "
-        "Include obligations, prohibitions, permissions, reporting requirements, retention rules, "
-        "security controls, audit requirements, penalties, and definitions that function as rules. "
+        "Include only enforceable obligations, prohibitions, or permissions that impose duties or limits. "
+        "If a clause is not clearly enforceable (e.g., purpose, scope, background, explanations, examples, "
+        "definitions, procedures, guidance, checklists), OMIT it. "
         "Preserve numbering and section references when present. "
         "If a rule spans multiple sentences, include the full text. "
-        "If a compliance item references a term that is defined elsewhere (e.g., \"~란 ~를 말한다\"), "
-        "include the relevant definition verbatim in the item's notes field so each row is self-contained. "
+        "If a compliance item references a term that is defined elsewhere, include the relevant definition "
+        "verbatim in the item's notes field so each row is self-contained. "
         "Do NOT create a separate item just for definitions unless the definition itself imposes a rule. "
         "EXCLUDE application forms, cover letters, pledges, signatures, addresses, "
         "applicant/company identification fields, and any template/blank fields "
-        "intended to be filled out (e.g., 신청일, 주소, 상호, 대표이사, 인, 서명). "
+        "intended to be filled out. "
         "If a section is purely a form or declaration without regulatory requirements, omit it. "
+        "If unsure whether a sentence is a binding rule, OMIT it. "
         "Return JSON only."
     )
 
@@ -234,9 +254,6 @@ def extract_compliance_items(markdown_text: str) -> Tuple[str, List[Dict[str, An
                                 "obligation",
                                 "prohibition",
                                 "permission",
-                                "definition",
-                                "procedure",
-                                "other",
                             ],
                         },
                         "page": {"type": ["integer", "null"]},
@@ -275,6 +292,10 @@ def extract_compliance_items(markdown_text: str) -> Tuple[str, List[Dict[str, An
     for item in all_items:
         text = (item.get("text") or "").strip()
         if not text:
+            continue
+        if item.get("type") not in {"obligation", "prohibition", "permission"}:
+            continue
+        if not _looks_normative(text):
             continue
         key = re.sub(r"\s+", " ", text).strip().lower()
         if key in seen:
