@@ -12,12 +12,14 @@ import {
   File,
   Clock,
   Loader2,
+  Activity,
 } from "lucide-react";
 import Link from "next/link";
 import { Header } from "@/components/layout/header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Progress } from "@/components/ui/progress";
 import { PipelineView } from "@/components/pipeline/pipeline-view";
 import { FindingCard } from "@/components/findings/finding-card";
 import { LogStream } from "@/components/logs/log-stream";
@@ -238,6 +240,51 @@ export default function AuditDetailPage() {
             </CardContent>
           </Card>
         </div>
+
+        {/* Progress Bar for Running/Completed audits */}
+        {(auditRequest.status === "running" || auditRequest.status === "completed") && (
+          <Card>
+            <CardContent className="py-4">
+              <div className="space-y-3">
+                <div className="flex items-center justify-between text-sm">
+                  <div className="flex items-center gap-2">
+                    {auditRequest.status === "running" ? (
+                      <>
+                        <Activity className="h-4 w-4 text-primary animate-pulse" />
+                        <span className="font-medium">감사 진행 중</span>
+                      </>
+                    ) : (
+                      <>
+                        <CheckCircle2 className="h-4 w-4 text-green-500" />
+                        <span className="font-medium">감사 완료</span>
+                      </>
+                    )}
+                  </div>
+                  <span className="text-muted-foreground">
+                    {auditRequest.total_passed + auditRequest.total_failed + auditRequest.total_review} 항목 검사
+                  </span>
+                </div>
+                <Progress
+                  value={
+                    auditRequest.status === "completed"
+                      ? 100
+                      : Math.min(
+                          ((auditRequest.total_passed + auditRequest.total_failed + auditRequest.total_review) /
+                            Math.max(auditRequest.files.length * 5, 1)) * 100,
+                          95
+                        )
+                  }
+                  className="h-2"
+                />
+                <div className="flex justify-between text-xs text-muted-foreground">
+                  <span className="text-green-600">{auditRequest.total_passed} 통과</span>
+                  <span className="text-red-600">{auditRequest.total_failed} 실패</span>
+                  <span className="text-yellow-600">{auditRequest.total_review} 검토 필요</span>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Tabs */}
         <div className="flex gap-2 border-b">
