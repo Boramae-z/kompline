@@ -224,7 +224,10 @@ export default function DashboardPage() {
                                                     {scan.status}
                                                 </Badge>
                                                 {scan.status === 'COMPLETED' && (
-                                                    <span className="text-xs font-semibold text-green-700 bg-green-100 px-2 py-0.5 rounded-full border border-green-200">
+                                                    <span className={`text-xs font-semibold px-2 py-0.5 rounded-full border ${scan.score === 100
+                                                            ? "text-green-700 bg-green-100 border-green-200"
+                                                            : "text-red-700 bg-red-100 border-red-200"
+                                                        }`}>
                                                         Score: {scan.score}% ({scan.passed}/{scan.total})
                                                     </span>
                                                 )}

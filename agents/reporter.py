@@ -25,24 +25,61 @@ def _summarize_status(results: List[Dict]) -> Dict[str, int]:
     return dict(counter)
 
 
-def _format_evidence(evidence: str | None) -> str:
+def _format_evidence(evidence: str | None, indent: str = "") -> str:
     if not evidence:
-        return "  - Evidence: (none)"
+        return f"{indent}- Evidence: (none)"
     lines = [line for line in evidence.splitlines() if line.strip()]
     if len(lines) == 1:
-        return f"  - Evidence: {lines[0]}"
+        return f"{indent}- Evidence: {lines[0]}"
     joined = "\n".join(lines)
-    return "  - Evidence:\n\n```text\n" + joined + "\n```\n"
+    return f"{indent}- Evidence:\n\n```text\n{joined}\n```\n"
 
 
-def _render_result_row(result: Dict) -> str:
-    evidence_block = _format_evidence(result.get("evidence"))
+def _render_result_row(result: Dict, compliance_item: Dict | None) -> str:
+    status = result.get("status") or "UNKNOWN"
+    reasoning = result.get("reasoning") or "No reasoning provided."
+    evidence_text = result.get("evidence")
+    item_text = (compliance_item or {}).get("item_text") or "(item text not available)"
+    section = (compliance_item or {}).get("section")
+    page = (compliance_item or {}).get("page")
+
+    item_meta = []
+    if section:
+        item_meta.append(f"Section: {section}")
+    if page:
+        item_meta.append(f"Page: {page}")
+    item_meta_text = ", ".join(item_meta) if item_meta else "Section/Page: (not provided)"
+
+    if status == "PASS":
+        explanation = (
+            "The validator found this requirement satisfied based on the reasoning and evidence below."
+        )
+        recommendation = "No action required."
+    elif status == "FAIL":
+        explanation = (
+            "This requirement is not satisfied. The validator indicates a compliance gap and cites the evidence below."
+        )
+        recommendation = (
+            "Update the implementation to satisfy this requirement, then re-run the scan. "
+            f"Focus on the gap described in the reasoning: {reasoning}"
+        )
+    else:
+        explanation = (
+            "The scan could not complete successfully for this item. See reasoning and evidence below."
+        )
+        recommendation = "Resolve the scan error described in the reasoning, then re-run the scan."
+
+    evidence_block = _format_evidence(evidence_text)
+
     return (
-        f"- Result ID: {result.get('id')}\n"
-        f"  - Status: {result.get('status')}\n"
-        f"  - Compliance Item: {result.get('compliance_item_id')}\n"
-        f"  - Reasoning: {result.get('reasoning')}\n"
+        f"### Compliance Item {result.get('compliance_item_id')}\n"
+        f"- Status: {status}\n"
+        f"- Requirement: {item_text}\n"
+        f"- {item_meta_text}\n"
+        f"- Explanation: {explanation}\n"
+        f"- Reasoning: {reasoning}\n"
         f"{evidence_block}\n"
+        f"- Recommendation: {recommendation}\n"
     )
 
 
@@ -53,24 +90,42 @@ def _write_report(scan_id: str, content: str) -> Path:
     return report_path
 
 
-def generate_report(scan: Dict, results: List[Dict]) -> Tuple[str, Path]:
+def generate_report(
+    scan: Dict,
+    results: List[Dict],
+    compliance_items: Dict[int, Dict],
+) -> Tuple[str, Path]:
     summary = _summarize_status(results)
+    total_results = sum(summary.values())
+    failures = summary.get("FAIL", 0) + summary.get("ERROR", 0)
     lines = [
-        f"# Kompline Scan Report",
+        "# Kompline Compliance Report",
+        "",
+        "## Scan Metadata",
         "",
         f"- Scan ID: {scan.get('id')}",
         f"- Repo URL: {scan.get('repo_url')}",
-        f"- Generated At: {_utc_now()}",
+        f"- Generated At (UTC): {_utc_now()}",
         "",
-        "## Summary",
+        "## Executive Summary",
         "",
     ]
     for status, count in sorted(summary.items()):
         lines.append(f"- {status}: {count}")
 
-    lines.extend(["", "## Results", ""])
+    lines.extend(
+        [
+            "",
+            f"- Total Checks: {total_results}",
+            f"- Findings Requiring Action: {failures}",
+            "",
+            "## Findings",
+            "",
+        ]
+    )
     for result in results:
-        lines.append(_render_result_row(result))
+        compliance_item = compliance_items.get(result.get("compliance_item_id"))
+        lines.append(_render_result_row(result, compliance_item))
 
     content = "\n".join(lines).strip() + "\n"
     report_path = _write_report(scan["id"], content)
@@ -91,7 +146,13 @@ def run_once(db: DatabaseClient) -> int:
 
         db.update_scan_status(scan_id, "REPORT_GENERATING")
         results = db.list_scan_results(scan_id)
-        content, report_path = generate_report(scan, results)
+        compliance_items: Dict[int, Dict] = {}
+        for result in results:
+            item_id = result.get("compliance_item_id")
+            if item_id is None or item_id in compliance_items:
+                continue
+            compliance_items[item_id] = db.get_compliance_item(item_id) or {}
+        content, report_path = generate_report(scan, results, compliance_items)
         try:
             db.update_scan_status(
                 scan_id,

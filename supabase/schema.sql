@@ -6,6 +6,7 @@ CREATE TABLE IF NOT EXISTS scans (
     repo_url TEXT NOT NULL,
     status TEXT DEFAULT 'QUEUED', -- QUEUED, PROCESSING, COMPLETED, FAILED
     report_url TEXT,
+    report_markdown TEXT,
     artifact_type TEXT DEFAULT 'code_repository'
 );
 
