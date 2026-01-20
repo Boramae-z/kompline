@@ -56,5 +56,11 @@ Add, Fix, Refactor, Update, Remove, Use, Improve, Simplify
 - Allowed types: `feature`, `fix`, `chore`, `refactor`, `docs`, `test`.
 - Keep names concise; include a ticket/issue ID if one exists (e.g., `feature/1234-add-login`).
 
+## Project Context
+
+When working on this project, always read the following documents first:
+
+- **[docs/IMPLEMENTATION_PLAN.md](./docs/IMPLEMENTATION_PLAN.md)**: Architecture, core abstractions, implementation phases, and file structure for the Kompline multi-agent compliance system.
+
 ## Notes
 - Add additional project rules here as needed.
