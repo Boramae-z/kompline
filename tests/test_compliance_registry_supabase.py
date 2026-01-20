@@ -15,7 +15,7 @@ def mock_items():
         ComplianceItemRow(
             id=1,
             document_id=1,
-            document_title="별지5",
+            document_title="알고리즘 공정성 자가평가",
             item_index=1,
             item_type="algorithm_fairness",
             item_text="정렬 기준 투명성",
@@ -28,7 +28,7 @@ def mock_items():
         ComplianceItemRow(
             id=2,
             document_id=1,
-            document_title="별지5",
+            document_title="알고리즘 공정성 자가평가",
             item_index=2,
             item_type="algorithm_fairness",
             item_text="계열사 편향 금지",
@@ -47,7 +47,7 @@ def mock_rules():
     return [
         Rule(
             id="DB-1-001",
-            title="별지5 - Item 1",
+            title="알고리즘 공정성 자가평가 - Item 1",
             description="정렬 기준 투명성",
             category=RuleCategory.ALGORITHM_FAIRNESS,
             severity=RuleSeverity.HIGH,
@@ -59,7 +59,7 @@ def mock_rules():
         ),
         Rule(
             id="DB-1-002",
-            title="별지5 - Item 2",
+            title="알고리즘 공정성 자가평가 - Item 2",
             description="계열사 편향 금지",
             category=RuleCategory.ALGORITHM_FAIRNESS,
             severity=RuleSeverity.CRITICAL,

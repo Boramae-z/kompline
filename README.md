@@ -4,7 +4,7 @@ Multi-agent continuous compliance system for Korean financial regulations.
 
 ## Overview
 
-Kompline (K-compliance + Pipeline) automates algorithm fairness verification for financial platforms, targeting the **별지5 자가평가서** (Appendix 5 Self-Assessment) requirements mandated by Korean financial regulators.
+Kompline (K-compliance + Pipeline) automates algorithm fairness verification for financial platforms, targeting the **알고리즘 공정성 자가평가** (Algorithm Fairness Self-Assessment, Form 별지5) requirements mandated by Korean financial regulators.
 
 ### Key Value Proposition
 
@@ -13,7 +13,7 @@ Kompline (K-compliance + Pipeline) automates algorithm fairness verification for
 | 2-3 weeks per audit | **2-3 minutes** automated analysis |
 | Single compliance at a time | **Multi-compliance parallel** verification |
 | Inconsistent evidence collection | **Structured evidence** with provenance |
-| Paper-based reports | **Digital 별지5** with audit trail |
+| Paper-based reports | **Digital 자가평가서** with audit trail |
 
 **ROI for B2B Adoption:**
 - **80% reduction** in compliance audit time
@@ -36,7 +36,7 @@ Kompline (K-compliance + Pipeline) automates algorithm fairness verification for
         ▼                     ▼                             ▼
 ┌───────────────────┐  ┌───────────────────┐  ┌───────────────────┐
 │    Audit Agent    │  │    Audit Agent    │  │    Audit Agent    │
-│ (별지5, code.py)  │  │ (PIPA, code.py)   │  │ (별지5, config)   │
+│ (공정성, code.py) │  │ (PIPA, code.py)   │  │ (공정성, config)  │
 ├───────────────────┤  ├───────────────────┤  ├───────────────────┤
 │ 1. Plan evidence  │  │ 1. Plan evidence  │  │ 1. Plan evidence  │
 │ 2. Call Readers   │  │ 2. Call Readers   │  │ 2. Call Readers   │
@@ -58,9 +58,9 @@ Kompline (K-compliance + Pipeline) automates algorithm fairness verification for
 Audit Relation = (Compliance, Artifact)
 
 Examples:
-- (별지5 알고리즘공정성, deposit_ranking.py) → Audit Agent #1
-- (개인정보보호법, deposit_ranking.py)       → Audit Agent #2
-- (별지5 알고리즘공정성, config.yaml)        → Audit Agent #3
+- (알고리즘 공정성 자가평가, deposit_ranking.py) → Audit Agent #1
+- (개인정보보호법, deposit_ranking.py)            → Audit Agent #2
+- (알고리즘 공정성 자가평가, config.yaml)         → Audit Agent #3
 ```
 
 One Artifact can be audited against multiple Compliances, or one Compliance can be applied to multiple Artifacts - all in parallel.
@@ -71,7 +71,7 @@ One Artifact can be audited against multiple Compliances, or one Compliance can 
 - **Evidence-Based Audit**: Structured evidence collection with provenance tracking
 - **LLM-Assisted Rule Evaluation**: Use OpenAI to assess rules from extracted evidence (fallback to heuristics)
 - **Human-in-the-Loop**: Automatic triggers for low confidence and FAIL findings
-- **별지5 Report Generation**: Regulatory-compliant report format with evidence references
+- **자가평가서 Report Generation**: Regulatory-compliant report format with evidence references
 - **Observability**: Full tracing and audit logging for inspection readiness
 
 ## Quick Start
@@ -127,8 +127,8 @@ kompline samples/deposit_ranking.py
 python -m samples.demo_scenario
 ```
 
-This script registers demo compliances (별지5 + 개인정보보호법), registers the sample
-artifact, runs parallel audits, and prints a 별지5 report.
+This script registers demo compliances (알고리즘 공정성 자가평가 + 개인정보보호법), registers the sample
+artifact, runs parallel audits, and prints a 자가평가서 report.
 
 #### Option 3: FastAPI Server
 
@@ -167,7 +167,7 @@ The UI provides:
 - Code input and file upload
 - Real-time agent activity log
 - Interactive compliance results
-- 별지5 report preview
+- 자가평가서 report preview
 - Pending review list (HITL)
 
 ## Project Structure
@@ -236,7 +236,7 @@ kompline/
 | **PDFReader** | Extract text/tables from PDF documents | `extract_text`, `extract_tables` |
 | **ConfigReader** | Parse YAML/JSON configuration files | `read_config`, `validate_schema` |
 | **RuleEvaluator** | (Optional) RAG-based rule matching | `query_rules`, `evaluate_compliance` |
-| **ReportGenerator** | Generate regulatory format reports | `format_byeolji5`, `export_pdf` |
+| **ReportGenerator** | Generate regulatory format reports | `format_report`, `export_pdf` |
 
 ## Human-in-the-Loop Triggers
 

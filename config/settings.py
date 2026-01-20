@@ -15,6 +15,9 @@ class Settings(BaseSettings):
     rag_api_url: str = "http://localhost:8000"
     embedding_model: str = "text-embedding-3-small"
 
+    # Database Configuration
+    database_url: str = ""
+
     # Agent Configuration
     max_feedback_iterations: int = 3
     confidence_threshold: float = 0.7

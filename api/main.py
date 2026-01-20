@@ -42,6 +42,7 @@ class AnalyzeResponse(BaseModel):
     """Response body for code analysis."""
 
     success: bool
+    audit_run_id: str | None = None
     result: dict[str, Any] | None = None
     report: dict[str, Any] | None = None
     report_markdown: str | None = None
@@ -114,6 +115,7 @@ async def analyze_code(request: AnalyzeRequest):
 
     return AnalyzeResponse(
         success=result.get("success", False),
+        audit_run_id=result.get("audit_run_id"),
         result=result.get("result"),
         report=result.get("report"),
         report_markdown=result.get("report_markdown"),

@@ -19,6 +19,7 @@ from kompline.models.compliance import (
     RuleCategory,
     RuleSeverity,
 )
+from kompline.models.compliance_item import ComplianceItem
 from kompline.models.evidence import (
     Evidence,
     EvidenceCollection,
@@ -39,6 +40,7 @@ __all__ = [
     "RuleCategory",
     "RuleSeverity",
     "EvidenceRequirement",
+    "ComplianceItem",
     # Artifact
     "Artifact",
     "ArtifactType",

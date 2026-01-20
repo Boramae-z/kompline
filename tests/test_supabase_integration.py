@@ -1,11 +1,20 @@
 """Supabase integration test (requires DB connection)."""
 
+import os
 import pytest
 from kompline.registry import get_compliance_registry
 
 
+# Skip integration tests if credentials are not set
+requires_supabase = pytest.mark.skipif(
+    not os.getenv("SUPABASE_URL") or not os.getenv("SUPABASE_SERVICE_ROLE_KEY"),
+    reason="Supabase credentials not set (SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY required)"
+)
+
+
 @pytest.mark.asyncio
 @pytest.mark.integration
+@requires_supabase
 async def test_full_supabase_flow():
     """Test loading from Supabase and using for evaluation.
 
@@ -34,6 +43,7 @@ async def test_full_supabase_flow():
 
 @pytest.mark.asyncio
 @pytest.mark.integration
+@requires_supabase
 async def test_load_by_document_id():
     """Test loading compliance items by document ID."""
     registry = get_compliance_registry()
@@ -50,6 +60,7 @@ async def test_load_by_document_id():
 
 @pytest.mark.asyncio
 @pytest.mark.integration
+@requires_supabase
 async def test_load_by_item_type():
     """Test loading compliance items by item type."""
     registry = get_compliance_registry()
@@ -66,6 +77,7 @@ async def test_load_by_item_type():
 
 
 @pytest.mark.integration
+@requires_supabase
 def test_sync_loading():
     """Test synchronous loading wrapper."""
     registry = get_compliance_registry()

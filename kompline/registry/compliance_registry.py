@@ -11,6 +11,7 @@ except ImportError:
 
 from kompline.models import (
     Compliance,
+    ComplianceItem,
     EvidenceRequirement,
     Rule,
     RuleCategory,
@@ -182,6 +183,36 @@ class ComplianceRegistry:
                 )
             )
 
+        items = []
+        for item_data in data.get("items", []):
+            evidence_reqs = []
+            for req_data in item_data.get("evidence_requirements", []):
+                evidence_reqs.append(
+                    EvidenceRequirement(
+                        id=req_data["id"],
+                        description=req_data["description"],
+                        artifact_types=req_data.get("artifact_types", []),
+                        extraction_hints=req_data.get("extraction_hints", []),
+                        required=req_data.get("required", True),
+                    )
+                )
+
+            items.append(
+                ComplianceItem(
+                    id=item_data["id"],
+                    compliance_id=data["id"],
+                    title=item_data["title"],
+                    description=item_data.get("description", ""),
+                    category=RuleCategory(item_data.get("category", "algorithm_fairness")),
+                    severity=RuleSeverity(item_data.get("severity", "high")),
+                    check_points=item_data.get("check_points", []),
+                    pass_criteria=item_data.get("pass_criteria", ""),
+                    fail_examples=item_data.get("fail_examples", []),
+                    evidence_requirements=evidence_reqs,
+                    metadata=item_data.get("metadata", {}),
+                )
+            )
+
         evidence_requirements = []
         for req_data in data.get("evidence_requirements", []):
             evidence_requirements.append(
@@ -201,6 +232,7 @@ class ComplianceRegistry:
             jurisdiction=data.get("jurisdiction", "global"),
             scope=data.get("scope", []),
             rules=rules,
+            items=items,
             evidence_requirements=evidence_requirements,
             report_template=data.get("report_template", "default"),
             description=data.get("description", ""),

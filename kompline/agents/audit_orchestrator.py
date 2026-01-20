@@ -15,7 +15,6 @@ from kompline.models import (
     Finding,
     FindingSummary,
     RunConfig,
-    create_audit_relations,
 )
 from kompline.registry import get_artifact_registry, get_compliance_registry
 from kompline.tracing.logger import log_agent_event
@@ -173,8 +172,8 @@ class AuditOrchestrator:
         # Validate inputs
         self._validate_inputs(compliance_ids, artifact_ids)
 
-        # Create audit relations
-        relations = create_audit_relations(compliance_ids, artifact_ids, run_config)
+        # Create audit relations (per compliance item)
+        relations = self._build_relations(compliance_ids, artifact_ids, run_config)
 
         log_agent_event(
             "relations", "orchestrator",
@@ -214,7 +213,7 @@ class AuditOrchestrator:
         Returns:
             The completed AuditRelation.
         """
-        relations = create_audit_relations([compliance_id], [artifact_id], run_config)
+        relations = self._build_relations([compliance_id], [artifact_id], run_config)
         if not relations:
             raise ValueError("Failed to create audit relation")
 
@@ -234,6 +233,69 @@ class AuditOrchestrator:
         for art_id in artifact_ids:
             if not self._artifact_registry.get(art_id):
                 raise ValueError(f"Artifact '{art_id}' not found in registry")
+
+    def _build_relations(
+        self,
+        compliance_ids: list[str],
+        artifact_ids: list[str],
+        run_config: RunConfig | None,
+    ) -> list[AuditRelation]:
+        """Build relations per compliance item."""
+        config = run_config or RunConfig()
+        relations: list[AuditRelation] = []
+        idx = 1
+
+        for comp_id in compliance_ids:
+            compliance = self._compliance_registry.get_or_raise(comp_id)
+            items = compliance.get_items()
+            if not items:
+                # Fallback: create a single relation without item
+                for art_id in artifact_ids:
+                    artifact = self._artifact_registry.get_or_raise(art_id)
+                    if not self._is_applicable(compliance.evidence_requirements, artifact):
+                        continue
+                    relations.append(
+                        AuditRelation(
+                            id=f"rel-{idx:03d}",
+                            compliance_id=comp_id,
+                            compliance_item_id=None,
+                            artifact_id=art_id,
+                            run_config=config,
+                        )
+                    )
+                    idx += 1
+                continue
+
+            for item in items:
+                for art_id in artifact_ids:
+                    artifact = self._artifact_registry.get_or_raise(art_id)
+                    if not self._is_applicable(item.evidence_requirements or compliance.evidence_requirements, artifact):
+                        continue
+                    relations.append(
+                        AuditRelation(
+                            id=f"rel-{idx:03d}",
+                            compliance_id=comp_id,
+                            compliance_item_id=item.id,
+                            artifact_id=art_id,
+                            run_config=config,
+                        )
+                    )
+                    idx += 1
+
+        return relations
+
+    def _is_applicable(self, requirements, artifact) -> bool:
+        """Filter relations by artifact type and evidence requirements."""
+        if not requirements:
+            return True
+        artifact_type = artifact.type.value.lower()
+        for req in requirements:
+            types = [t.lower() for t in (req.artifact_types or [])]
+            if not types:
+                return True
+            if artifact_type in types:
+                return True
+        return False
 
     async def _run_parallel(
         self,

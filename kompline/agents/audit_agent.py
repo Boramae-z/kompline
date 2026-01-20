@@ -5,7 +5,9 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from agents import Agent
 
+from kompline.agents.code_search_agent import CodeSearchAgent
 from kompline.agents.readers.base_reader import get_reader_for_artifact
+from kompline.persistence import compute_fingerprint, load_cached_evidence, save_cached_evidence
 from kompline.models import (
     AuditRelation,
     Compliance,
@@ -16,9 +18,12 @@ from kompline.models import (
     FindingStatus,
     Provenance,
     RunConfig,
+    ArtifactType,
+    ComplianceItem,
 )
 from kompline.registry import get_artifact_registry, get_compliance_registry
 from kompline.tracing.logger import log_agent_event
+from config.settings import settings
 
 
 AUDIT_AGENT_INSTRUCTIONS = """You are the Audit Agent for Kompline compliance verification.
@@ -140,36 +145,71 @@ class AuditAgent:
 
             # Collect evidence
             evidence_collection = await self._collect_evidence(
-                compliance, artifact, relation.id
+                compliance, artifact, relation.id, relation.compliance_item_id
             )
 
             for evidence in evidence_collection:
                 relation.add_evidence(evidence)
 
-            # Filter rules if critical_only mode
-            rules_to_evaluate = compliance.rules
+            # Determine compliance items to evaluate
+            items_to_evaluate: list[ComplianceItem] = compliance.get_items()
+
+            if relation.compliance_item_id:
+                item = compliance.get_item_by_id(relation.compliance_item_id)
+                if item:
+                    items_to_evaluate = [item]
+                else:
+                    log_agent_event(
+                        "warning", "audit_agent",
+                        f"Compliance item '{relation.compliance_item_id}' not found; falling back to full set"
+                    )
+
             if self.critical_only:
                 from kompline.models import RuleSeverity
-                rules_to_evaluate = [
-                    r for r in compliance.rules
+                items_to_evaluate = [
+                    r for r in items_to_evaluate
                     if r.severity in (RuleSeverity.CRITICAL, RuleSeverity.HIGH)
                 ]
                 log_agent_event(
                     "reduced_scope", "audit_agent",
-                    f"Critical-only mode: evaluating {len(rules_to_evaluate)}/{len(compliance.rules)} rules"
+                    f"Critical-only mode: evaluating {len(items_to_evaluate)} items"
                 )
+
+            # Add code-search evidence per rule (item-level hints)
+            if artifact.type == ArtifactType.CODE:
+                source_code = None
+                try:
+                    from pathlib import Path
+                    source_code = Path(artifact.locator).read_text()
+                except Exception:
+                    source_code = None
+
+                if source_code:
+                    search_agent = CodeSearchAgent()
+                    for rule in items_to_evaluate:
+                        search_hits = search_agent.search_text(
+                            source_code,
+                            Path(artifact.locator),
+                            rule,
+                            relation.id,
+                        )
+                        for ev in search_hits:
+                            evidence_collection.add(ev)
 
             # Evaluate rules (LLM-assisted when enabled)
             self._current_run_config = relation.run_config
             findings = []
             if self._should_use_llm(relation.run_config):
                 findings = await self._llm_evaluate_all_rules(
-                    compliance, evidence_collection, relation.id
+                    compliance,
+                    evidence_collection,
+                    relation.id,
+                    items_to_evaluate,
                 )
 
             # Fallback to heuristic for missing or failed LLM results
             if not findings:
-                for rule in rules_to_evaluate:
+                for rule in items_to_evaluate:
                     findings.append(
                         await self._evaluate_rule(
                             rule, evidence_collection, relation.id
@@ -178,7 +218,7 @@ class AuditAgent:
             else:
                 # Ensure every rule has a finding
                 existing = {f.rule_id for f in findings}
-                for rule in rules_to_evaluate:
+                for rule in items_to_evaluate:
                     if rule.id not in existing:
                         findings.append(
                             await self._evaluate_rule(
@@ -236,6 +276,7 @@ class AuditAgent:
         compliance: Compliance,
         evidence: EvidenceCollection,
         relation_id: str,
+        items: list[ComplianceItem] | None = None,
     ) -> list[Finding]:
         """Evaluate all rules using LLM, returning findings list."""
         try:
@@ -243,6 +284,7 @@ class AuditAgent:
             from kompline.utils import extract_json
             import uuid
 
+            items = items or compliance.get_items()
             rules_payload = [
                 {
                     "rule_id": r.id,
@@ -252,7 +294,7 @@ class AuditAgent:
                     "pass_criteria": r.pass_criteria,
                     "fail_examples": r.fail_examples,
                 }
-                for r in compliance.rules
+                for r in items
             ]
 
             evidence_payload = [
@@ -284,7 +326,7 @@ class AuditAgent:
             if not isinstance(findings_raw, list):
                 return []
 
-            rule_ids = {r.id for r in compliance.rules}
+            rule_ids = {r.id for r in items}
             evidence_ids = {ev.id for ev in evidence}
             findings: list[Finding] = []
 
@@ -338,6 +380,7 @@ class AuditAgent:
         compliance: Compliance,
         artifact: Artifact,
         relation_id: str,
+        compliance_item_id: str | None = None,
     ) -> EvidenceCollection:
         """Collect evidence from artifact based on compliance requirements.
 
@@ -357,14 +400,41 @@ class AuditAgent:
             )
             return EvidenceCollection(relation_id=relation_id)
 
+        # Evidence cache (DB) lookup
+        fingerprint = None
+        if settings.database_url:
+            try:
+                fingerprint = compute_fingerprint(artifact)
+            except Exception:
+                fingerprint = None
+
+        if settings.database_url and fingerprint:
+            cached = await load_cached_evidence(
+                artifact_id=artifact.id,
+                fingerprint=fingerprint,
+                relation_id=relation_id,
+            )
+            if cached:
+                log_agent_event(
+                    "cache_hit", "audit_agent",
+                    f"Using cached evidence for {artifact.id}"
+                )
+                return cached
+
         # Configure reader based on agent settings
         if hasattr(reader, 'use_ast'):
             reader.use_ast = self.use_ast
 
-        # Collect all evidence requirements from compliance and rules
+        # Collect evidence requirements (scope to item if provided)
         all_requirements = list(compliance.evidence_requirements)
-        for rule in compliance.rules:
-            all_requirements.extend(rule.evidence_requirements)
+        items = compliance.get_items()
+        if compliance_item_id:
+            item = compliance.get_item_by_id(compliance_item_id)
+            if item:
+                all_requirements.extend(item.evidence_requirements)
+        else:
+            for item in items:
+                all_requirements.extend(item.evidence_requirements)
 
         try:
             evidence = await reader.extract_evidence(
@@ -389,6 +459,16 @@ class AuditAgent:
             "evidence", "audit_agent",
             f"Collected {len(evidence)} evidence items from {artifact.name}"
         )
+
+        if settings.database_url and fingerprint:
+            try:
+                await save_cached_evidence(
+                    artifact_id=artifact.id,
+                    fingerprint=fingerprint,
+                    evidence=evidence,
+                )
+            except Exception as e:
+                log_agent_event("warning", "audit_agent", f"Cache save failed: {e}")
 
         return evidence
 

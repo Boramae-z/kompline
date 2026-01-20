@@ -41,7 +41,7 @@ class TestSupabaseProvider:
         row = ComplianceItemRow(
             id=1,
             document_id=1,
-            document_title="별지5 알고리즘공정성",
+            document_title="알고리즘 공정성 자가평가",
             item_index=1,
             item_type="algorithm_fairness",
             item_text="정렬 기준이 명확하게 문서화되어야 함",

@@ -14,7 +14,7 @@ class Citation:
     that support a finding's evaluation.
     """
 
-    source: str  # Document/regulation reference (e.g., "별지5 제3조")
+    source: str  # Document/regulation reference (e.g., "알고리즘 공정성 자가평가 제3조")
     text: str  # Relevant text excerpt
     relevance: float  # 0.0 to 1.0 relevance score
     page: int | None = None  # Page number if applicable

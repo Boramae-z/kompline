@@ -14,6 +14,8 @@ from kompline.demo_data import resolve_compliance_ids, register_file_artifact
 from kompline.guardrails.input_validator import validate_python_source
 from kompline.models import Finding, RunConfig
 from kompline.tracing.logger import setup_tracing, log_agent_event, get_tracer
+from kompline.persistence import save_audit_result
+from config.settings import settings
 
 try:
     from dotenv import load_dotenv
@@ -120,11 +122,26 @@ class KomplineRunner:
                 run_config=run_config,
             )
 
+            audit_run_id = None
+            if settings.database_url:
+                import uuid
+                audit_run_id = f"run-{uuid.uuid4().hex[:8]}"
+                try:
+                    await save_audit_result(
+                        run_id=audit_run_id,
+                        compliance_ids=compliance_ids,
+                        artifact_ids=[artifact_id],
+                        relations=result.relations,
+                    )
+                except Exception as e:
+                    log_agent_event("warning", "runner", f"DB save failed: {e}")
+
             report = self.report_generator.generate(result)
             report_markdown = report.to_markdown()
 
             output = {
                 "success": True,
+                "audit_run_id": audit_run_id,
                 "result": _serialize_audit_result(result),
                 "report": _serialize_report(report),
                 "report_markdown": report_markdown,
@@ -237,6 +254,7 @@ def _serialize_audit_result(result: Any) -> dict[str, Any]:
             {
                 "id": rel.id,
                 "compliance_id": rel.compliance_id,
+                "compliance_item_id": rel.compliance_item_id,
                 "artifact_id": rel.artifact_id,
                 "status": rel.status.value,
                 "evidence_count": len(rel.evidence_collected),

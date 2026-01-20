@@ -1,0 +1,16 @@
+{
+  "headers": {
+    "x-nextjs-stale-time": "300",
+    "x-nextjs-prerender": "1",
+    "x-next-cache-tags": "_N_T_/layout,_N_T_/audits/layout,_N_T_/audits/latest/layout,_N_T_/audits/latest/page,_N_T_/audits/latest"
+  },
+  "segmentPaths": [
+    "/_tree",
+    "/_full",
+    "/audits/latest/__PAGE__",
+    "/audits/latest",
+    "/audits",
+    "/_index",
+    "/_head"
+  ]
+}

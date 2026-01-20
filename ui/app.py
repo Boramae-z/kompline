@@ -15,7 +15,7 @@ st.set_page_config(
 )
 
 # Configuration
-API_URL = "http://localhost:8080"
+API_URL = "http://localhost:8888"
 
 # Initialize session state
 if "analysis_result" not in st.session_state:
@@ -205,7 +205,7 @@ def main():
                         st.warning("API returned error")
             except Exception:
                 st.error("API not available")
-                st.caption(f"Start server: `uvicorn api.main:app --port 8080`")
+                st.caption(f"Start server: `uvicorn api.main:app --port 8888`")
 
         use_llm = st.checkbox("Use LLM Evaluation", value=True)
         require_review = st.checkbox("Enable Human-in-the-Loop", value=True)
@@ -321,7 +321,11 @@ def main():
 
             st.subheader("Detailed Findings")
             for relation in summary.get("relations", []):
-                title = f"{relation['compliance_id']} × {relation['artifact_id']}"
+                item_id = relation.get("compliance_item_id")
+                title = f"{relation['compliance_id']}"
+                if item_id:
+                    title += f" :: {item_id}"
+                title += f" × {relation['artifact_id']}"
                 with st.expander(title):
                     for finding in relation.get("findings", []):
                         status_icon = {
@@ -336,6 +340,9 @@ def main():
                         st.write(f"**Reasoning**: {finding.get('reasoning', '')}")
                         if finding.get("recommendation"):
                             st.warning(f"**Recommendation**: {finding['recommendation']}")
+
+            if payload.get("audit_run_id"):
+                st.caption(f"Audit Run ID: {payload.get('audit_run_id')}")
 
             if payload.get("report_markdown"):
                 st.divider()

@@ -174,6 +174,50 @@ class ArtifactRegistry:
         self.register(artifact)
         return artifact
 
+    def register_github_repository(
+        self,
+        github_url: str,
+        artifact_id: str,
+        name: str | None = None,
+        branch: str = "main",
+        tags: list[str] | None = None,
+        file_patterns: list[str] | None = None,
+    ) -> Artifact:
+        """Register a GitHub repository as an artifact.
+
+        Args:
+            github_url: GitHub repository URL.
+            artifact_id: Artifact ID.
+            name: Display name (optional).
+            branch: Target branch (default: main).
+            tags: Tag list.
+            file_patterns: File patterns to include (default: *.py).
+
+        Returns:
+            Registered Artifact.
+        """
+        artifact = Artifact(
+            id=artifact_id,
+            name=name or artifact_id,
+            type=ArtifactType.CODE,
+            locator=github_url,
+            access_method=AccessMethod.GIT_CLONE,
+            provenance=Provenance(
+                source=github_url,
+                version=branch,
+                retrieved_at=datetime.now(),
+            ),
+            tags=tags or ["github"],
+            metadata={
+                "branch": branch,
+                "file_patterns": file_patterns or ["*.py"],
+                "source_type": "github",
+            },
+        )
+
+        self.register_or_update(artifact)
+        return artifact
+
     def load_from_yaml(self, path: str | Path) -> Artifact:
         """Load an artifact definition from YAML.
 

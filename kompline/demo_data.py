@@ -35,12 +35,12 @@ def register_demo_compliances(include_privacy: bool = True) -> list[str]:
         registry.register(
             Compliance(
                 id="byeolji5-fairness",
-                name="별지5 알고리즘공정성",
+                name="알고리즘 공정성 자가평가",
                 version="2024.01",
                 jurisdiction="KR",
                 scope=["algorithm", "ranking"],
                 report_template="byeolji5",
-                description="금융상품 비교·추천 플랫폼의 알고리즘 공정성 자가평가 규정",
+                description="금융상품 비교·추천 플랫폼의 알고리즘 공정성 자가평가 (별지5 양식)",
                 rules=[
                     Rule(
                         id="ALG-001",

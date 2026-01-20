@@ -48,6 +48,7 @@ class AuditRelation:
     id: str  # Unique identifier: "rel-001"
     compliance_id: str  # Reference to Compliance
     artifact_id: str  # Reference to Artifact
+    compliance_item_id: str | None = None  # Reference to ComplianceItem (optional)
     status: AuditStatus = AuditStatus.PENDING
     run_config: RunConfig = field(default_factory=RunConfig)
     evidence_collected: list[Any] = field(default_factory=list)  # Evidence objects

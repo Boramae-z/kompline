@@ -45,7 +45,7 @@ class ReportTemplate:
 # Built-in report templates
 BYEOLJI5_TEMPLATE = ReportTemplate(
     id="byeolji5",
-    name="별지5 알고리즘 자가평가서",
+    name="알고리즘 공정성 자가평가서 (별지5)",
     description="Korean financial regulation algorithm fairness self-assessment",
     sections=[
         "basic_info",
@@ -81,7 +81,7 @@ Your role is to generate compliance reports in various formats based on template
 
 ## Available Templates
 
-1. **별지5 (byeolji5)**: Korean financial regulation self-assessment
+1. **알고리즘 공정성 자가평가 (byeolji5)**: Korean financial regulation self-assessment
 2. **Internal**: Standard internal audit report
 
 ## Report Structure
@@ -298,7 +298,7 @@ class ReportGenerator:
 
         lines = []
         lines.append("=" * 60)
-        lines.append("별지5. 알고리즘 자가평가서")
+        lines.append("알고리즘 공정성 자가평가서 (별지5 양식)")
         lines.append("=" * 60)
         lines.append("")
         lines.append(f"보고서 ID: {report.id}")

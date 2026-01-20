@@ -2,7 +2,10 @@
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from kompline.models.compliance_item import ComplianceItem
 
 
 class RuleCategory(str, Enum):
@@ -58,18 +61,19 @@ class Compliance:
 
     Examples:
     - 개인정보보호법 (PIPA)
-    - 별지5 알고리즘공정성 (Appendix 5 Algorithm Fairness)
+    - 알고리즘 공정성 자가평가 (Algorithm Fairness Self-Assessment, Form 별지5)
     - SOC2
     """
 
     id: str  # e.g., "byeolji5-fairness", "pipa-kr-2024"
-    name: str  # e.g., "별지5 알고리즘공정성"
+    name: str  # e.g., "알고리즘 공정성 자가평가"
     version: str  # e.g., "2024.01"
     jurisdiction: str  # e.g., "KR", "global"
     scope: list[str]  # Areas covered: ["algorithm", "data_handling"]
     rules: list[Rule]
-    evidence_requirements: list[EvidenceRequirement]
-    report_template: str  # Template ID for report generation
+    evidence_requirements: list[EvidenceRequirement] = field(default_factory=list)
+    report_template: str = "default"  # Template ID for report generation
+    items: list["ComplianceItem"] = field(default_factory=list)
     description: str = ""
     effective_date: str | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
@@ -85,3 +89,35 @@ class Compliance:
     def get_critical_rules(self) -> list[Rule]:
         """Get all critical rules that must pass."""
         return self.get_rules_by_severity(RuleSeverity.CRITICAL)
+
+    def get_items(self) -> list["ComplianceItem"]:
+        """Get compliance items (build from rules if needed)."""
+        if self.items:
+            return self.items
+        # Lazy conversion from legacy rules
+        from kompline.models.compliance_item import ComplianceItem
+
+        self.items = [
+            ComplianceItem(
+                id=rule.id,
+                compliance_id=self.id,
+                title=rule.title,
+                description=rule.description,
+                category=rule.category,
+                severity=rule.severity,
+                check_points=rule.check_points,
+                pass_criteria=rule.pass_criteria,
+                fail_examples=rule.fail_examples,
+                evidence_requirements=rule.evidence_requirements,
+                metadata=rule.metadata,
+            )
+            for rule in self.rules
+        ]
+        return self.items
+
+    def get_item_by_id(self, item_id: str) -> "ComplianceItem | None":
+        """Get a compliance item by ID."""
+        for item in self.get_items():
+            if item.id == item_id:
+                return item
+        return None
