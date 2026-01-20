@@ -25,22 +25,22 @@ Kompline은 코드·로그·데이터 등 기업 산출물을 상시 스캔해 �
 
 ```mermaid
 flowchart LR
-    FE[Frontend (Next.js)]
-    CE[Compliance Extractor (FastAPI)]
-    API[User Scan Request]
-    SB[(Supabase)]
-    A[Agents (Python)]
-    O[Orchestrator]
-    V[Validator]
-    R[Reporter]
+  FE[Frontend (Next.js)];
+  CE[Compliance Extractor (FastAPI)];
+  API[User Scan Request];
+  SB[(Supabase)];
+  A[Agents (Python)];
+  O[Orchestrator];
+  V[Validator];
+  R[Reporter];
 
-    CE -->|documents, compliance_items| SB
-    FE -->|scan 생성| SB
-    API -->|scan_documents| SB
+  CE -->|documents, compliance_items| SB;
+  FE -->|scan 생성| SB;
+  API -->|scan_documents| SB;
 
-    A --> O -->|scan_results 생성| SB
-    A --> V -->|PASS/FAIL 업데이트| SB
-    A --> R -->|리포트 생성| SB
+  A --> O -->|scan_results 생성| SB;
+  A --> V -->|PASS/FAIL 업데이트| SB;
+  A --> R -->|리포트 생성| SB;
 ```
 
 ## 기술 스택
@@ -81,17 +81,7 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=sb_public_xxx
 1) `supabase/schema.sql` (documents + compliance_items)
 2) `agents/sql/scan_schema.sql` (scans + scan_results)
 
-### 3) Compliance Extractor 실행
-
-```bash
-cd compliance_extractor
-python -m venv .venv
-source .venv/bin/activate  # Windows: .venv\Scripts\activate
-pip install -r requirements.txt
-uvicorn app:app --reload --host 0.0.0.0 --port 8000
-```
-
-### 4) Agents 실행
+### 3) Agents 실행
 
 ```bash
 cd agents
@@ -104,7 +94,7 @@ python -m agents.run validator
 python -m agents.run reporter
 ```
 
-### 5) Frontend 실행
+### 4) Frontend 실행
 
 ```bash
 cd frontend
@@ -114,12 +104,13 @@ npm run dev
 
 ## 향후 계획 (Optional)
 
-- 규정 템플릿 확장 및 추가 표준(ISO/SOC) 대응
-- CI/CD 연동 및 자동 감사 트리거
+- 개인정보보호법, 데이터3법, 회계감사인증, 인증 감사 등 다양한 감사 전략에 대응
 
 ## 팀원
 
 | 이름 | 역할 |
 | ---- | ---- |
-|      |      |
-|      |      |
+| 백지오 | 팀장, Product Engineer |
+| 윤병인 | Product Engineer |
+| 문봉오 | Product Engineer |
+| 박준영 | Product Engineer |
