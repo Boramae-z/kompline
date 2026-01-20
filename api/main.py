@@ -10,9 +10,53 @@ from pydantic import BaseModel
 from kompline.runner import KomplineRunner
 from kompline.guardrails.input_validator import validate_python_source
 from kompline.tracing.logger import get_tracer
-from kompline.persistence import load_registries_from_db
+from kompline.persistence import (
+    load_registries_from_db,
+    save_audit_request,
+    get_audit_request,
+    list_audit_requests as db_list_audit_requests,
+    delete_audit_request as db_delete_audit_request,
+    save_audit_request_file,
+    delete_audit_request_file as db_delete_audit_request_file,
+    get_audit_request_files,
+    update_audit_request_status,
+)
 from kompline.registry import get_compliance_registry, get_artifact_registry
+from kompline.models import (
+    Compliance,
+    Rule,
+    RuleCategory,
+    RuleSeverity,
+    Artifact,
+    ArtifactType,
+    AccessMethod,
+    Provenance,
+)
 from config.settings import settings
+
+# Import API schemas
+from api.schemas import (
+    ComplianceCreate,
+    ComplianceUpdate,
+    ComplianceResponse,
+    ArtifactCreate,
+    ArtifactUpdate,
+    ArtifactResponse,
+    GitHubImportRequest,
+    GitHubImportResponse,
+    EvidenceResponse,
+    FindingResponse,
+    AuditRunResponse,
+    DBStatusResponse,
+    DBSyncRequest,
+    DBSyncResponse,
+    RuleSchema,
+    ProvenanceSchema,
+    RuleCategoryEnum,
+    RuleSeverityEnum,
+    ArtifactTypeEnum,
+    AccessMethodEnum,
+)
 
 app = FastAPI(
     title="Kompline API",
@@ -131,8 +175,6 @@ class AuditRequestResponse(BaseModel):
     total_review: int = 0
 
 
-# Audit requests storage (in-memory for demo)
-audit_requests_store: dict[str, dict[str, Any]] = {}
 
 
 # ============ Health Check ============
@@ -311,21 +353,14 @@ async def delete_audit(audit_id: str):
 # ============ Audit Requests (Multi-file) ============
 
 @app.get("/api/audit-requests")
-async def list_audit_requests(
+async def list_audit_requests_endpoint(
     status: str | None = None,
     limit: int = 20,
     offset: int = 0,
 ):
-    """List all audit requests."""
-    requests = list(audit_requests_store.values())
-
-    if status:
-        requests = [r for r in requests if r.get("status") == status]
-
-    requests.sort(key=lambda x: x.get("created_at", ""), reverse=True)
-
-    total = len(requests)
-    requests = requests[offset:offset + limit]
+    """List all audit requests from DB."""
+    await ensure_registries_loaded(require_db=True)
+    requests, total = await db_list_audit_requests(status=status, limit=limit, offset=offset)
 
     return {
         "audit_requests": requests,
@@ -336,38 +371,30 @@ async def list_audit_requests(
 
 
 @app.post("/api/audit-requests")
-async def create_audit_request(request: AuditRequestCreate):
-    """Create a new audit request (without running yet)."""
+async def create_audit_request_endpoint(request: AuditRequestCreate):
+    """Create a new audit request (saved to DB)."""
+    await ensure_registries_loaded(require_db=True)
     request_id = str(uuid.uuid4())[:8]
 
-    audit_request = {
-        "id": request_id,
-        "name": request.name,
-        "description": request.description,
-        "status": "draft",  # draft -> pending -> running -> completed/failed
-        "compliance_ids": request.compliance_ids,
-        "use_llm": request.use_llm,
-        "require_review": request.require_review,
-        "files": [],
-        "created_at": datetime.now().isoformat(),
-        "submitted_at": None,
-        "completed_at": None,
-        "result": None,
-        "is_compliant": None,
-        "total_passed": 0,
-        "total_failed": 0,
-        "total_review": 0,
-    }
+    await save_audit_request(
+        request_id=request_id,
+        name=request.name,
+        description=request.description or "",
+        status="draft",
+        compliance_ids=request.compliance_ids,
+        use_llm=request.use_llm,
+        require_review=request.require_review,
+    )
 
-    audit_requests_store[request_id] = audit_request
-
+    audit_request = await get_audit_request(request_id)
     return audit_request
 
 
 @app.get("/api/audit-requests/{request_id}")
-async def get_audit_request(request_id: str):
-    """Get an audit request by ID."""
-    audit_request = audit_requests_store.get(request_id)
+async def get_audit_request_endpoint(request_id: str):
+    """Get an audit request by ID from DB."""
+    await ensure_registries_loaded(require_db=True)
+    audit_request = await get_audit_request(request_id)
     if not audit_request:
         raise HTTPException(status_code=404, detail="Audit request not found")
     return audit_request
@@ -378,8 +405,9 @@ async def upload_audit_file(
     request_id: str,
     file: UploadFile = File(...),
 ):
-    """Upload a file to an audit request."""
-    audit_request = audit_requests_store.get(request_id)
+    """Upload a file to an audit request (saved to DB)."""
+    await ensure_registries_loaded(require_db=True)
+    audit_request = await get_audit_request(request_id)
     if not audit_request:
         raise HTTPException(status_code=404, detail="Audit request not found")
 
@@ -403,77 +431,82 @@ async def upload_audit_file(
     else:
         file_type = "text"
 
-    file_info = {
-        "id": file_id,
-        "filename": filename,
-        "file_type": file_type,
-        "size": len(content),
-        "content": content.decode("utf-8", errors="replace"),
-        "uploaded_at": datetime.now().isoformat(),
-    }
+    content_str = content.decode("utf-8", errors="replace")
 
-    audit_request["files"].append(file_info)
+    await save_audit_request_file(
+        file_id=file_id,
+        audit_request_id=request_id,
+        filename=filename,
+        file_type=file_type,
+        size=len(content),
+        content=content_str,
+    )
 
-    # Return without content (for response)
     return {
         "id": file_id,
         "filename": filename,
         "file_type": file_type,
         "size": len(content),
-        "uploaded_at": file_info["uploaded_at"],
+        "uploaded_at": datetime.now().isoformat(),
     }
 
 
 @app.delete("/api/audit-requests/{request_id}/files/{file_id}")
 async def delete_audit_file(request_id: str, file_id: str):
     """Remove a file from an audit request."""
-    audit_request = audit_requests_store.get(request_id)
+    await ensure_registries_loaded(require_db=True)
+    audit_request = await get_audit_request(request_id)
     if not audit_request:
         raise HTTPException(status_code=404, detail="Audit request not found")
 
     if audit_request["status"] not in ["draft", "pending"]:
         raise HTTPException(status_code=400, detail="Cannot remove files after submission")
 
-    original_count = len(audit_request["files"])
-    audit_request["files"] = [f for f in audit_request["files"] if f["id"] != file_id]
-
-    if len(audit_request["files"]) == original_count:
+    deleted = await db_delete_audit_request_file(request_id, file_id)
+    if not deleted:
         raise HTTPException(status_code=404, detail="File not found")
 
     return {"status": "deleted"}
 
 
 @app.post("/api/audit-requests/{request_id}/submit")
-async def submit_audit_request(request_id: str):
+async def submit_audit_request_endpoint(request_id: str):
     """Submit an audit request for processing."""
-    audit_request = audit_requests_store.get(request_id)
+    await ensure_registries_loaded(require_db=True)
+    audit_request = await get_audit_request(request_id)
     if not audit_request:
         raise HTTPException(status_code=404, detail="Audit request not found")
 
     if audit_request["status"] not in ["draft", "pending"]:
         raise HTTPException(status_code=400, detail="Audit already submitted")
 
-    if not audit_request["files"]:
+    # Get files from DB
+    files = await get_audit_request_files(request_id)
+    if not files:
         raise HTTPException(status_code=400, detail="At least one file is required")
 
-    audit_request["status"] = "running"
-    audit_request["submitted_at"] = datetime.now().isoformat()
+    # Update status to running
+    submitted_at = datetime.now()
+    await update_audit_request_status(
+        request_id=request_id,
+        status="running",
+        submitted_at=submitted_at,
+    )
 
     # Run analysis for each file
     try:
         all_results = []
-        all_traces = []
         total_passed = 0
         total_failed = 0
         total_review = 0
 
-        for file_info in audit_request["files"]:
+        for file_info in files:
             if file_info["file_type"] == "python":
                 result = await get_runner().analyze(
                     source_code=file_info["content"],
                     compliance_ids=audit_request["compliance_ids"],
-                    use_llm=audit_request["use_llm"],
-                    require_review=audit_request["require_review"],
+                    use_llm=audit_request.get("use_llm", True),
+                    require_review=audit_request.get("require_review", True),
                 )
 
                 result_payload = result.get("result", {})
@@ -495,36 +528,47 @@ async def submit_audit_request(request_id: str):
                             finding["file_id"] = file_info["id"]
                             reviews_store[finding.get("id", str(uuid.uuid4()))] = finding
 
-        # Update audit request
-        audit_request["status"] = "completed"
-        audit_request["completed_at"] = datetime.now().isoformat()
-        audit_request["result"] = {
+        # Update audit request with results
+        result_json = {
             "file_results": all_results,
             "total_passed": total_passed,
             "total_failed": total_failed,
             "total_review": total_review,
         }
-        audit_request["is_compliant"] = total_failed == 0 and total_review == 0
-        audit_request["total_passed"] = total_passed
-        audit_request["total_failed"] = total_failed
-        audit_request["total_review"] = total_review
-        audit_request["trace"] = get_runner().get_trace()
 
-        return audit_request
+        await update_audit_request_status(
+            request_id=request_id,
+            status="completed",
+            completed_at=datetime.now(),
+            is_compliant=(total_failed == 0 and total_review == 0),
+            total_passed=total_passed,
+            total_failed=total_failed,
+            total_review=total_review,
+            result_json=result_json,
+        )
+
+        # Return updated audit request
+        updated_request = await get_audit_request(request_id)
+        updated_request["trace"] = get_runner().get_trace()
+        return updated_request
 
     except Exception as e:
-        audit_request["status"] = "failed"
-        audit_request["error"] = str(e)
+        await update_audit_request_status(
+            request_id=request_id,
+            status="failed",
+            error_message=str(e),
+        )
         raise HTTPException(status_code=500, detail={"error": str(e)})
 
 
 @app.delete("/api/audit-requests/{request_id}")
-async def delete_audit_request(request_id: str):
-    """Delete an audit request."""
-    if request_id not in audit_requests_store:
+async def delete_audit_request_endpoint(request_id: str):
+    """Delete an audit request from DB."""
+    await ensure_registries_loaded(require_db=True)
+    deleted = await db_delete_audit_request(request_id)
+    if not deleted:
         raise HTTPException(status_code=404, detail="Audit request not found")
 
-    del audit_requests_store[request_id]
     return {"status": "deleted"}
 
 
@@ -710,6 +754,435 @@ async def export_report(report_id: str, format: str = "markdown"):
         }
     else:
         raise HTTPException(status_code=400, detail=f"Unsupported format: {format}")
+
+
+# ============ Helper Functions for CRUD ============
+
+
+def _compliance_to_response(c: Compliance) -> ComplianceResponse:
+    """Convert Compliance domain model to API response."""
+    return ComplianceResponse(
+        id=c.id,
+        name=c.name,
+        version=c.version,
+        jurisdiction=c.jurisdiction,
+        scope=c.scope,
+        description=c.description,
+        rules=[
+            RuleSchema(
+                id=r.id,
+                title=r.title,
+                description=r.description,
+                category=RuleCategoryEnum(r.category.value),
+                severity=RuleSeverityEnum(r.severity.value),
+                check_points=r.check_points,
+                pass_criteria=r.pass_criteria,
+            )
+            for r in c.rules
+        ],
+        metadata=getattr(c, "metadata", {}),
+    )
+
+
+def _request_to_compliance(data: ComplianceCreate) -> Compliance:
+    """Convert API request to Compliance domain model."""
+    return Compliance(
+        id=data.id,
+        name=data.name,
+        version=data.version,
+        jurisdiction=data.jurisdiction,
+        scope=data.scope,
+        description=data.description,
+        rules=[
+            Rule(
+                id=r.id,
+                title=r.title,
+                description=r.description,
+                category=RuleCategory(r.category.value),
+                severity=RuleSeverity(r.severity.value),
+                check_points=r.check_points,
+                pass_criteria=r.pass_criteria,
+                fail_examples=[],
+                evidence_requirements=[],
+            )
+            for r in data.rules
+        ],
+        evidence_requirements=[],
+        report_template="default",
+    )
+
+
+def _apply_compliance_update(existing: Compliance, data: ComplianceUpdate) -> Compliance:
+    """Apply update to existing compliance."""
+    rules = existing.rules
+    if data.rules is not None:
+        rules = [
+            Rule(
+                id=r.id,
+                title=r.title,
+                description=r.description,
+                category=RuleCategory(r.category.value),
+                severity=RuleSeverity(r.severity.value),
+                check_points=r.check_points,
+                pass_criteria=r.pass_criteria,
+                fail_examples=[],
+                evidence_requirements=[],
+            )
+            for r in data.rules
+        ]
+
+    return Compliance(
+        id=existing.id,
+        name=data.name or existing.name,
+        version=data.version or existing.version,
+        jurisdiction=existing.jurisdiction,
+        scope=existing.scope,
+        description=data.description if data.description is not None else existing.description,
+        rules=rules,
+        evidence_requirements=existing.evidence_requirements,
+        report_template=existing.report_template,
+    )
+
+
+def _artifact_to_response(a: Artifact) -> ArtifactResponse:
+    """Convert Artifact domain model to API response."""
+    provenance = None
+    if a.provenance:
+        provenance = ProvenanceSchema(
+            source=a.provenance.source,
+            commit_hash=getattr(a.provenance, "commit_hash", None),
+            branch=getattr(a.provenance, "branch", None),
+        )
+
+    return ArtifactResponse(
+        id=a.id,
+        name=a.name,
+        type=ArtifactTypeEnum(a.type.value),
+        locator=a.locator,
+        access_method=AccessMethodEnum(a.access_method.value),
+        description=a.description,
+        tags=a.tags,
+        provenance=provenance,
+        metadata=getattr(a, "metadata", {}),
+    )
+
+
+def _request_to_artifact(data: ArtifactCreate) -> Artifact:
+    """Convert API request to Artifact domain model."""
+    provenance = None
+    if data.provenance:
+        provenance = Provenance(
+            source=data.provenance.source,
+            commit_hash=data.provenance.commit_hash,
+            branch=data.provenance.branch,
+        )
+
+    return Artifact(
+        id=data.id,
+        name=data.name,
+        type=ArtifactType(data.type.value),
+        locator=data.locator,
+        access_method=AccessMethod(data.access_method.value),
+        description=data.description,
+        tags=data.tags,
+        provenance=provenance,
+    )
+
+
+def _apply_artifact_update(existing: Artifact, data: ArtifactUpdate) -> Artifact:
+    """Apply update to existing artifact."""
+    return Artifact(
+        id=existing.id,
+        name=data.name or existing.name,
+        type=existing.type,
+        locator=existing.locator,
+        access_method=existing.access_method,
+        description=data.description if data.description is not None else existing.description,
+        tags=data.tags if data.tags is not None else existing.tags,
+        provenance=existing.provenance,
+    )
+
+
+def _audit_to_run_response(audit: dict[str, Any]) -> AuditRunResponse:
+    """Convert audit dict to AuditRunResponse."""
+    return AuditRunResponse(
+        id=audit.get("id", ""),
+        compliance_ids=audit.get("compliance_ids", []),
+        artifact_ids=audit.get("artifact_ids", []),
+        status=audit.get("status", "unknown"),
+        started_at=datetime.fromisoformat(audit["created_at"]) if audit.get("created_at") else datetime.now(),
+        completed_at=datetime.fromisoformat(audit["completed_at"]) if audit.get("completed_at") else None,
+    )
+
+
+# ============ Compliance CRUD Endpoints ============
+
+
+@app.get("/api/compliances/crud", response_model=list[ComplianceResponse])
+async def list_compliances_crud(jurisdiction: str | None = None):
+    """List all compliances with full details (CRUD version)."""
+    registry = get_compliance_registry()
+    items = registry.list_all()
+
+    if jurisdiction:
+        items = [c for c in items if c.jurisdiction == jurisdiction]
+
+    return [_compliance_to_response(c) for c in items]
+
+
+@app.get("/api/compliances/{compliance_id}", response_model=ComplianceResponse)
+async def get_compliance_by_id(compliance_id: str):
+    """Get a specific compliance by ID."""
+    registry = get_compliance_registry()
+    c = registry.get(compliance_id)
+    if not c:
+        raise HTTPException(status_code=404, detail=f"Compliance {compliance_id} not found")
+    return _compliance_to_response(c)
+
+
+@app.post("/api/compliances", response_model=ComplianceResponse, status_code=201)
+async def create_compliance(data: ComplianceCreate):
+    """Create a new compliance."""
+    registry = get_compliance_registry()
+
+    if registry.get(data.id):
+        raise HTTPException(status_code=409, detail=f"Compliance {data.id} already exists")
+
+    compliance = _request_to_compliance(data)
+    registry.register(compliance)
+    return _compliance_to_response(compliance)
+
+
+@app.put("/api/compliances/{compliance_id}", response_model=ComplianceResponse)
+async def update_compliance(compliance_id: str, data: ComplianceUpdate):
+    """Update an existing compliance."""
+    registry = get_compliance_registry()
+    existing = registry.get(compliance_id)
+
+    if not existing:
+        raise HTTPException(status_code=404, detail=f"Compliance {compliance_id} not found")
+
+    updated = _apply_compliance_update(existing, data)
+    registry.register_or_update(updated)
+    return _compliance_to_response(updated)
+
+
+@app.delete("/api/compliances/{compliance_id}", status_code=204)
+async def delete_compliance(compliance_id: str):
+    """Delete a compliance."""
+    registry = get_compliance_registry()
+
+    if not registry.get(compliance_id):
+        raise HTTPException(status_code=404, detail=f"Compliance {compliance_id} not found")
+
+    registry.unregister(compliance_id)
+
+
+@app.post("/api/compliances/load-from-supabase", response_model=ComplianceResponse)
+async def load_compliance_from_supabase(
+    document_id: int | None = None,
+    language: str = "ko",
+    compliance_id: str | None = None,
+):
+    """Load compliance items from Supabase database."""
+    registry = get_compliance_registry()
+    try:
+        c = await registry.load_from_supabase(
+            document_id=document_id,
+            language=language,
+            compliance_id=compliance_id,
+        )
+        return _compliance_to_response(c)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to load from Supabase: {e}")
+
+
+# ============ Artifact CRUD Endpoints ============
+
+
+@app.get("/api/artifacts/crud", response_model=list[ArtifactResponse])
+async def list_artifacts_crud(artifact_type: str | None = None, tag: str | None = None):
+    """List all artifacts with full details (CRUD version)."""
+    registry = get_artifact_registry()
+    items = registry.list_all()
+
+    if artifact_type:
+        items = [a for a in items if a.type.value == artifact_type]
+    if tag:
+        items = [a for a in items if tag in a.tags]
+
+    return [_artifact_to_response(a) for a in items]
+
+
+@app.get("/api/artifacts/{artifact_id}", response_model=ArtifactResponse)
+async def get_artifact_by_id(artifact_id: str):
+    """Get a specific artifact by ID."""
+    registry = get_artifact_registry()
+    a = registry.get(artifact_id)
+    if not a:
+        raise HTTPException(status_code=404, detail=f"Artifact {artifact_id} not found")
+    return _artifact_to_response(a)
+
+
+@app.post("/api/artifacts", response_model=ArtifactResponse, status_code=201)
+async def create_artifact(data: ArtifactCreate):
+    """Create a new artifact."""
+    registry = get_artifact_registry()
+
+    if registry.get(data.id):
+        raise HTTPException(status_code=409, detail=f"Artifact {data.id} already exists")
+
+    artifact = _request_to_artifact(data)
+    registry.register(artifact)
+    return _artifact_to_response(artifact)
+
+
+@app.put("/api/artifacts/{artifact_id}", response_model=ArtifactResponse)
+async def update_artifact(artifact_id: str, data: ArtifactUpdate):
+    """Update an existing artifact."""
+    registry = get_artifact_registry()
+    existing = registry.get(artifact_id)
+
+    if not existing:
+        raise HTTPException(status_code=404, detail=f"Artifact {artifact_id} not found")
+
+    updated = _apply_artifact_update(existing, data)
+    registry.register_or_update(updated)
+    return _artifact_to_response(updated)
+
+
+@app.delete("/api/artifacts/{artifact_id}", status_code=204)
+async def delete_artifact(artifact_id: str):
+    """Delete an artifact."""
+    registry = get_artifact_registry()
+
+    if not registry.get(artifact_id):
+        raise HTTPException(status_code=404, detail=f"Artifact {artifact_id} not found")
+
+    registry.unregister(artifact_id)
+
+
+@app.post("/api/artifacts/import-github", response_model=GitHubImportResponse)
+async def import_artifacts_from_github(data: GitHubImportRequest):
+    """Import artifacts from a GitHub repository."""
+    registry = get_artifact_registry()
+
+    try:
+        artifacts = await registry.register_github_repository(
+            repo_url=data.repo_url,
+            branch=data.branch,
+            file_patterns=data.file_patterns,
+        )
+        return GitHubImportResponse(
+            imported_count=len(artifacts),
+            artifacts=[_artifact_to_response(a) for a in artifacts],
+        )
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.post("/api/artifacts/register-file", response_model=ArtifactResponse)
+async def register_file_as_artifact(file_path: str, artifact_id: str | None = None):
+    """Register a local file as an artifact."""
+    registry = get_artifact_registry()
+
+    try:
+        artifact = registry.register_file(file_path=file_path, artifact_id=artifact_id)
+        return _artifact_to_response(artifact)
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail=f"File not found: {file_path}")
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+# ============ Evidence/Findings Query Endpoints ============
+
+
+@app.get("/api/evidence", response_model=list[EvidenceResponse])
+async def list_evidence(
+    rule_id: str | None = None,
+    artifact_id: str | None = None,
+    audit_run_id: str | None = None,
+):
+    """List evidence records (placeholder - returns empty for now)."""
+    # TODO: Implement when DB persistence for evidence is ready
+    return []
+
+
+@app.get("/api/findings", response_model=list[FindingResponse])
+async def list_findings(
+    rule_id: str | None = None,
+    artifact_id: str | None = None,
+    status: str | None = None,
+):
+    """List finding records (placeholder - returns empty for now)."""
+    # TODO: Implement when DB persistence for findings is ready
+    return []
+
+
+@app.get("/api/audit-runs", response_model=list[AuditRunResponse])
+async def list_audit_runs(limit: int = 50, offset: int = 0):
+    """List audit run history from in-memory store."""
+    runs = list(audits_store.values())[offset : offset + limit]
+    return [_audit_to_run_response(r) for r in runs]
+
+
+@app.get("/api/audit-runs/{run_id}", response_model=AuditRunResponse)
+async def get_audit_run(run_id: str):
+    """Get a specific audit run by ID."""
+    if run_id not in audits_store:
+        raise HTTPException(status_code=404, detail=f"Audit run {run_id} not found")
+    return _audit_to_run_response(audits_store[run_id])
+
+
+# ============ DB Admin Endpoints ============
+
+
+@app.get("/api/db/status", response_model=DBStatusResponse)
+async def get_db_status():
+    """Get database connection status."""
+    compliance_registry = get_compliance_registry()
+    artifact_registry = get_artifact_registry()
+
+    return DBStatusResponse(
+        connected=bool(settings.supabase_url),
+        provider="supabase",
+        compliance_count=len(compliance_registry.list_all()),
+        artifact_count=len(artifact_registry.list_all()),
+    )
+
+
+@app.post("/api/db/sync", response_model=DBSyncResponse)
+async def sync_database(data: DBSyncRequest):
+    """Sync registries with database."""
+    errors: list[str] = []
+    compliances_synced = 0
+    artifacts_synced = 0
+
+    if data.sync_compliances:
+        try:
+            registry = get_compliance_registry()
+            await registry.load_from_db()
+            compliances_synced = len(registry.list_all())
+        except Exception as e:
+            errors.append(f"Compliance sync failed: {e}")
+
+    if data.sync_artifacts:
+        try:
+            registry = get_artifact_registry()
+            await registry.load_from_db()
+            artifacts_synced = len(registry.list_all())
+        except Exception as e:
+            errors.append(f"Artifact sync failed: {e}")
+
+    return DBSyncResponse(
+        success=len(errors) == 0,
+        compliances_synced=compliances_synced,
+        artifacts_synced=artifacts_synced,
+        errors=errors,
+    )
 
 
 # ============ Legacy endpoints (backwards compatibility) ============

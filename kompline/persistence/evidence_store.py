@@ -1,4 +1,4 @@
-"""Evidence caching utilities backed by Postgres."""
+"""Evidence caching utilities backed by Supabase REST API."""
 
 from __future__ import annotations
 
@@ -8,17 +8,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from sqlalchemy import select
-
-from kompline.db import get_sessionmaker, get_async_engine
 from kompline.models import Artifact, Evidence, EvidenceCollection, EvidenceType, Provenance
-from kompline.persistence.models import Base, EvidenceCache
-
-
-async def ensure_schema() -> None:
-    """Create tables if they do not exist."""
-    async with get_async_engine().begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+from kompline.supabase_client import get_async_supabase_client
 
 
 def compute_fingerprint(artifact: Artifact) -> str | None:
@@ -77,23 +68,23 @@ async def load_cached_evidence(
     relation_id: str,
 ) -> EvidenceCollection | None:
     """Load cached evidence by artifact fingerprint."""
-    await ensure_schema()
-    async_session = get_sessionmaker()
-    async with async_session() as session:
-        stmt = select(EvidenceCache).where(
-            EvidenceCache.artifact_id == artifact_id,
-            EvidenceCache.fingerprint == fingerprint,
-        )
-        row = (await session.execute(stmt)).scalars().first()
-        if not row:
-            return None
-        items = row.evidence_json.get("items", [])
-        collection = EvidenceCollection(relation_id=relation_id)
-        for item in items:
-            ev = evidence_from_dict(item)
-            ev.relation_id = relation_id
-            collection.add(ev)
-        return collection
+    client = await get_async_supabase_client()
+
+    result = await client.table("evidence_cache").select("*").eq(
+        "artifact_id", artifact_id
+    ).eq("fingerprint", fingerprint).execute()
+
+    if not result.data:
+        return None
+
+    row = result.data[0]
+    items = row.get("evidence_json", {}).get("items", [])
+    collection = EvidenceCollection(relation_id=relation_id)
+    for item in items:
+        ev = evidence_from_dict(item)
+        ev.relation_id = relation_id
+        collection.add(ev)
+    return collection
 
 
 async def save_cached_evidence(
@@ -102,26 +93,28 @@ async def save_cached_evidence(
     evidence: EvidenceCollection,
 ) -> None:
     """Save evidence to cache."""
-    await ensure_schema()
-    async_session = get_sessionmaker()
-    async with async_session() as session:
-        existing = await session.get(EvidenceCache, _cache_id(artifact_id, fingerprint))
-        if existing:
-            await session.delete(existing)
-        payload = {
-            "artifact_id": artifact_id,
-            "fingerprint": fingerprint,
-            "items": [evidence_to_dict(e) for e in evidence],
-        }
-        cache = EvidenceCache(
-            id=_cache_id(artifact_id, fingerprint),
-            artifact_id=artifact_id,
-            fingerprint=fingerprint,
-            created_at=datetime.utcnow(),
-            evidence_json=payload,
-        )
-        session.add(cache)
-        await session.commit()
+    client = await get_async_supabase_client()
+
+    cache_id = _cache_id(artifact_id, fingerprint)
+
+    # Delete existing if any
+    await client.table("evidence_cache").delete().eq("id", cache_id).execute()
+
+    payload = {
+        "artifact_id": artifact_id,
+        "fingerprint": fingerprint,
+        "items": [evidence_to_dict(e) for e in evidence],
+    }
+
+    data = {
+        "id": cache_id,
+        "artifact_id": artifact_id,
+        "fingerprint": fingerprint,
+        "created_at": datetime.utcnow().isoformat(),
+        "evidence_json": payload,
+    }
+
+    await client.table("evidence_cache").insert(data).execute()
 
 
 def _cache_id(artifact_id: str, fingerprint: str) -> str:

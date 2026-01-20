@@ -4,8 +4,6 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from sqlalchemy import select
-
 try:
     import yaml
 except ImportError:
@@ -17,9 +15,7 @@ from kompline.models import (
     ArtifactType,
     Provenance,
 )
-from kompline.persistence.models import ArtifactRecord
-from kompline.persistence.audit_store import ensure_schema
-from kompline.db import get_sessionmaker
+from kompline.supabase_client import get_async_supabase_client
 
 def _parse_dt(value: Any):
     from datetime import datetime
@@ -257,36 +253,37 @@ class ArtifactRegistry:
         return artifact
 
     async def load_from_db(self) -> list[Artifact]:
-        """Load artifact definitions from DB."""
-        await ensure_schema()
+        """Load artifact definitions from DB using Supabase REST API."""
         self.clear()
-        async_session = get_sessionmaker()
-        async with async_session() as session:
-            artifacts = (await session.execute(select(ArtifactRecord))).scalars().all()
+        client = await get_async_supabase_client()
+
+        result = await client.table("artifact").select("*").execute()
+        artifacts = result.data or []
 
         loaded: list[Artifact] = []
         for rec in artifacts:
             provenance = None
-            if rec.provenance:
+            prov_data = rec.get("provenance")
+            if prov_data:
                 provenance = Provenance(
-                    source=rec.provenance.get("source", ""),
-                    version=rec.provenance.get("version"),
-                    retrieved_at=_parse_dt(rec.provenance.get("retrieved_at")),
-                    retrieved_by=rec.provenance.get("retrieved_by", "system"),
-                    checksum=rec.provenance.get("checksum"),
-                    metadata=rec.provenance.get("metadata", {}),
+                    source=prov_data.get("source", ""),
+                    version=prov_data.get("version"),
+                    retrieved_at=_parse_dt(prov_data.get("retrieved_at")),
+                    retrieved_by=prov_data.get("retrieved_by", "system"),
+                    checksum=prov_data.get("checksum"),
+                    metadata=prov_data.get("metadata", {}),
                 )
             artifact = Artifact(
-                id=rec.id,
-                name=rec.name,
-                type=ArtifactType(rec.type),
-                locator=rec.locator,
-                access_method=AccessMethod(rec.access_method),
-                description=rec.description or "",
-                extraction_schema=rec.extraction_schema or {},
+                id=rec["id"],
+                name=rec["name"],
+                type=ArtifactType(rec["type"]),
+                locator=rec["locator"],
+                access_method=AccessMethod(rec["access_method"]),
+                description=rec.get("description") or "",
+                extraction_schema=rec.get("extraction_schema") or {},
                 provenance=provenance,
-                tags=rec.tags or [],
-                metadata=rec.extra_data or {},
+                tags=rec.get("tags") or [],
+                metadata=rec.get("extra_data") or {},
             )
             self.register_or_update(artifact)
             loaded.append(artifact)

@@ -18,6 +18,10 @@ class Settings(BaseSettings):
     # Database Configuration
     database_url: str = ""
 
+    # Supabase Configuration
+    supabase_url: str = ""
+    supabase_service_role_key: str = ""
+
     # Agent Configuration
     max_feedback_iterations: int = 3
     confidence_threshold: float = 0.7

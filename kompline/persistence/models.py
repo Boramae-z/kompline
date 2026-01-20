@@ -156,3 +156,40 @@ class FindingRecord(Base):
     requires_human_review: Mapped[bool] = mapped_column(default=False)
     review_status: Mapped[str | None] = mapped_column(String(32), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class AuditRequestRecord(Base):
+    """Audit request record (multi-file audit workflow)."""
+
+    __tablename__ = "audit_request"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    name: Mapped[str] = mapped_column(String(256))
+    description: Mapped[str] = mapped_column(Text, default="")
+    status: Mapped[str] = mapped_column(String(32), default="draft")
+    compliance_ids: Mapped[list] = mapped_column(JSON)
+    use_llm: Mapped[bool] = mapped_column(default=True)
+    require_review: Mapped[bool] = mapped_column(default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    submitted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    is_compliant: Mapped[bool | None] = mapped_column(nullable=True)
+    total_passed: Mapped[int] = mapped_column(default=0)
+    total_failed: Mapped[int] = mapped_column(default=0)
+    total_review: Mapped[int] = mapped_column(default=0)
+    result_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class AuditRequestFileRecord(Base):
+    """Audit request file record."""
+
+    __tablename__ = "audit_request_file"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    audit_request_id: Mapped[str] = mapped_column(String(64), index=True)
+    filename: Mapped[str] = mapped_column(String(256))
+    file_type: Mapped[str] = mapped_column(String(32))
+    size: Mapped[int] = mapped_column(default=0)
+    content: Mapped[str] = mapped_column(Text)
+    uploaded_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
