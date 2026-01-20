@@ -9,3 +9,4 @@ rag_embedding/.pytest_cache/
 # Next.js build artifacts
 web/.next/
 web/node_modules/
+.worktrees/
