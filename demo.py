@@ -91,8 +91,10 @@ async def run_demo():
 
     # Step 1: Load compliance
     print_header("Step 1: 규정 로드 (Load Compliance)")
+    from kompline.demo_data import register_demo_compliances
+    register_demo_compliances(include_privacy=False)
     comp_registry = get_compliance_registry()
-    compliance = comp_registry.load_from_yaml("samples/compliances/byeolji5_fairness.yaml")
+    compliance = comp_registry.get("byeolji5-fairness")
 
     print(f"\n📜 Loaded: {compliance.name}")
     print(f"   Version: {compliance.version}")
@@ -104,13 +106,15 @@ async def run_demo():
 
     # Step 2: Register artifact
     print_header("Step 2: 감사 대상 등록 (Register Artifact)")
+    from kompline.demo_data import register_file_artifact
     art_registry = get_artifact_registry()
-    artifact = art_registry.register_file(
+    artifact_id = register_file_artifact(
         "samples/deposit_ranking.py",
         artifact_id="deposit-ranking",
         name="예금상품 추천 알고리즘",
         tags=["algorithm", "ranking", "deposit"],
     )
+    artifact = art_registry.get(artifact_id)
 
     print(f"\n📁 Registered: {artifact.name}")
     print(f"   ID: {artifact.id}")
