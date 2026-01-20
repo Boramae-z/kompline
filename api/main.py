@@ -33,6 +33,7 @@ from kompline.models import (
     Provenance,
 )
 from config.settings import settings
+from kompline.persistence.scan_store import ScanStore
 
 # Import API schemas
 from api.schemas import (
@@ -85,6 +86,18 @@ def get_runner() -> KomplineRunner:
     if runner is None:
         runner = KomplineRunner()
     return runner
+
+
+def get_scan_store() -> ScanStore:
+    """Create a ScanStore instance from settings."""
+    if not settings.supabase_url or not settings.supabase_service_role_key:
+        raise HTTPException(
+            status_code=500,
+            detail="Supabase not configured. Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY."
+        )
+    from supabase import create_client
+    client = create_client(settings.supabase_url, settings.supabase_service_role_key)
+    return ScanStore(client)
 
 
 async def ensure_registries_loaded(require_db: bool = False) -> None:
@@ -173,6 +186,21 @@ class AuditRequestResponse(BaseModel):
     total_passed: int = 0
     total_failed: int = 0
     total_review: int = 0
+
+
+class CreateScanRequest(BaseModel):
+    """Request to create a new compliance scan."""
+    repo_url: str
+    document_ids: list[str]
+
+
+class ScanResponse(BaseModel):
+    """Response for a scan."""
+    scan_id: str
+    status: str
+    repo_url: str
+    report_url: str | None = None
+    report_markdown: str | None = None
 
 
 
@@ -754,6 +782,69 @@ async def export_report(report_id: str, format: str = "markdown"):
         }
     else:
         raise HTTPException(status_code=400, detail=f"Unsupported format: {format}")
+
+
+# ============ Scans (Worker-based Architecture) ============
+
+
+@app.post("/scans", response_model=ScanResponse, status_code=201)
+async def create_scan(request: CreateScanRequest):
+    """Create a new compliance scan.
+
+    The scan will be queued for processing by the worker architecture.
+    Use GET /scans/{scan_id} to check status and retrieve results.
+    """
+    store = get_scan_store()
+    scan_id = store.create_scan(request.repo_url, request.document_ids)
+    return ScanResponse(
+        scan_id=scan_id,
+        status="QUEUED",
+        repo_url=request.repo_url,
+    )
+
+
+@app.get("/scans/{scan_id}", response_model=ScanResponse)
+async def get_scan_status(scan_id: str):
+    """Get scan status and results.
+
+    Status values:
+    - QUEUED: Waiting to be processed
+    - PROCESSING: Being validated by workers
+    - REPORT_GENERATING: All validations complete, generating report
+    - COMPLETED: Scan finished with report available
+    - FAILED: Scan failed due to an error
+    """
+    store = get_scan_store()
+    scan = store.get_scan(scan_id)
+    if not scan:
+        raise HTTPException(status_code=404, detail="Scan not found")
+    return ScanResponse(
+        scan_id=scan["id"],
+        status=scan["status"],
+        repo_url=scan["repo_url"],
+        report_url=scan.get("report_url"),
+        report_markdown=scan.get("report_markdown"),
+    )
+
+
+@app.get("/scans/{scan_id}/results")
+async def get_scan_results(scan_id: str) -> list[dict[str, Any]]:
+    """Get detailed results for a scan.
+
+    Returns a list of scan results, each containing:
+    - id: Result ID
+    - compliance_item_id: The compliance item that was validated
+    - status: PENDING, PASS, FAIL, or ERROR
+    - reasoning: Explanation of the validation result
+    - evidence: Code or configuration snippets that support the result
+    - worker_id: ID of the worker that processed this item
+    """
+    store = get_scan_store()
+    scan = store.get_scan(scan_id)
+    if not scan:
+        raise HTTPException(status_code=404, detail="Scan not found")
+    results = store.list_scan_results(scan_id)
+    return results
 
 
 # ============ Helper Functions for CRUD ============

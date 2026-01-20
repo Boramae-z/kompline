@@ -174,3 +174,20 @@ class ScanStore:
             .execute()
         )
         return response.data[0] if response.data else None
+
+    def create_scan(self, repo_url: str, document_ids: list[str]) -> str:
+        """Create a new scan and link documents."""
+        # Insert scan
+        response = (
+            self.client.table("scans")
+            .insert({"repo_url": repo_url, "status": "QUEUED"})
+            .execute()
+        )
+        scan_id = response.data[0]["id"]
+
+        # Link documents
+        if document_ids:
+            rows = [{"scan_id": scan_id, "document_id": doc_id} for doc_id in document_ids]
+            self.client.table("scan_documents").insert(rows).execute()
+
+        return scan_id
