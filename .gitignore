@@ -4,3 +4,4 @@ rag_embedding/index.faiss
 rag_embedding/rag.sqlite
 __pycache__
 rag_embedding/.pytest_cache/
+*.pdf
