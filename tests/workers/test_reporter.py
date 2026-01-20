@@ -1,4 +1,4 @@
-"""Tests for ReporterWorker with markdown and byeolji5 format support."""
+"""Tests for ReporterWorker with markdown and korean_format support."""
 
 import pytest
 from unittest.mock import MagicMock, patch
@@ -166,36 +166,36 @@ class TestGenerateMarkdown:
         assert "code_snippet()" in markdown
 
 
-class TestGenerateByeolji5:
-    """Tests for _generate_byeolji5 method (Korean regulatory format)."""
+class TestGenerateKoreanFormat:
+    """Tests for _generate_korean_format method (Korean regulatory format)."""
 
-    def test_byeolji5_contains_korean_header(self):
-        """Byeolji5 report contains Korean header."""
+    def test_korean_format_contains_korean_header(self):
+        """Korean format report contains Korean header."""
         mock_store = MagicMock()
         worker = ReporterWorker(mock_store)
 
         scan = {"id": "scan-123", "repo_url": "https://github.com/test/repo"}
         results = []
 
-        report = worker._generate_byeolji5(scan, results)
+        report = worker._generate_korean_format(scan, results)
 
-        assert "별지5" in report or "알고리즘 공정성 자가평가서" in report
+        assert "알고리즘 공정성 검증 보고서" in report
 
-    def test_byeolji5_contains_scan_info(self):
-        """Byeolji5 report contains scan ID and repo URL."""
+    def test_korean_format_contains_scan_info(self):
+        """Korean format report contains scan ID and repo URL."""
         mock_store = MagicMock()
         worker = ReporterWorker(mock_store)
 
         scan = {"id": "scan-123", "repo_url": "https://github.com/test/repo"}
         results = []
 
-        report = worker._generate_byeolji5(scan, results)
+        report = worker._generate_korean_format(scan, results)
 
         assert "scan-123" in report
         assert "https://github.com/test/repo" in report
 
-    def test_byeolji5_shows_compliant_when_all_pass(self):
-        """Byeolji5 shows compliant (적합) when all items pass."""
+    def test_korean_format_shows_compliant_when_all_pass(self):
+        """Korean format shows compliant (적합) when all items pass."""
         mock_store = MagicMock()
         worker = ReporterWorker(mock_store)
 
@@ -205,12 +205,12 @@ class TestGenerateByeolji5:
             {"id": "r2", "compliance_item_id": 2, "status": "PASS", "reasoning": "OK", "evidence": None},
         ]
 
-        report = worker._generate_byeolji5(scan, results)
+        report = worker._generate_korean_format(scan, results)
 
         assert "적합" in report
 
-    def test_byeolji5_shows_non_compliant_when_fail_exists(self):
-        """Byeolji5 shows non-compliant (부적합) when any item fails."""
+    def test_korean_format_shows_non_compliant_when_fail_exists(self):
+        """Korean format shows non-compliant (부적합) when any item fails."""
         mock_store = MagicMock()
         worker = ReporterWorker(mock_store)
 
@@ -220,13 +220,13 @@ class TestGenerateByeolji5:
             {"id": "r2", "compliance_item_id": 2, "status": "FAIL", "reasoning": "Missing", "evidence": None},
         ]
 
-        report = worker._generate_byeolji5(scan, results)
+        report = worker._generate_korean_format(scan, results)
 
         # Should have 부적합 for overall judgment
         assert "부적합" in report
 
-    def test_byeolji5_shows_non_compliant_when_error_exists(self):
-        """Byeolji5 shows non-compliant when any item has ERROR status."""
+    def test_korean_format_shows_non_compliant_when_error_exists(self):
+        """Korean format shows non-compliant when any item has ERROR status."""
         mock_store = MagicMock()
         worker = ReporterWorker(mock_store)
 
@@ -236,7 +236,7 @@ class TestGenerateByeolji5:
             {"id": "r2", "compliance_item_id": 2, "status": "ERROR", "reasoning": "Error occurred", "evidence": None},
         ]
 
-        report = worker._generate_byeolji5(scan, results)
+        report = worker._generate_korean_format(scan, results)
 
         # Should have 부적합 for overall judgment due to ERROR
         lines = report.split("\n")
@@ -249,8 +249,8 @@ class TestGenerateByeolji5:
                 break
         assert judgment_found, "Overall judgment line not found in report"
 
-    def test_byeolji5_contains_summary_counts(self):
-        """Byeolji5 contains summary with counts in Korean."""
+    def test_korean_format_contains_summary_counts(self):
+        """Korean format contains summary with counts in Korean."""
         mock_store = MagicMock()
         worker = ReporterWorker(mock_store)
 
@@ -261,7 +261,7 @@ class TestGenerateByeolji5:
             {"id": "r3", "compliance_item_id": 3, "status": "ERROR", "reasoning": "Error", "evidence": None},
         ]
 
-        report = worker._generate_byeolji5(scan, results)
+        report = worker._generate_korean_format(scan, results)
 
         # Check for Korean status labels
         assert "점검 항목" in report or "총" in report
@@ -269,8 +269,8 @@ class TestGenerateByeolji5:
         assert "3" in report  # total items
         assert "1" in report  # PASS count
 
-    def test_byeolji5_contains_detailed_results_in_korean(self):
-        """Byeolji5 contains detailed results with Korean status labels."""
+    def test_korean_format_contains_detailed_results_in_korean(self):
+        """Korean format contains detailed results with Korean status labels."""
         mock_store = MagicMock()
         worker = ReporterWorker(mock_store)
 
@@ -279,13 +279,13 @@ class TestGenerateByeolji5:
             {"id": "r1", "compliance_item_id": 42, "status": "PASS", "reasoning": "Encryption found", "evidence": "AES"},
         ]
 
-        report = worker._generate_byeolji5(scan, results)
+        report = worker._generate_korean_format(scan, results)
 
         assert "42" in report  # compliance_item_id
         assert "Encryption found" in report or "근거" in report
 
-    def test_byeolji5_truncates_long_evidence(self):
-        """Byeolji5 truncates evidence longer than 200 characters."""
+    def test_korean_format_truncates_long_evidence(self):
+        """Korean format truncates evidence longer than 200 characters."""
         mock_store = MagicMock()
         worker = ReporterWorker(mock_store)
 
@@ -295,7 +295,7 @@ class TestGenerateByeolji5:
             {"id": "r1", "compliance_item_id": 1, "status": "PASS", "reasoning": "OK", "evidence": long_evidence},
         ]
 
-        report = worker._generate_byeolji5(scan, results)
+        report = worker._generate_korean_format(scan, results)
 
         # Evidence should be truncated with ...
         assert "..." in report

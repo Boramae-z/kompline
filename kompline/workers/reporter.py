@@ -74,12 +74,12 @@ class ReporterWorker:
 
         return "\n".join(lines)
 
-    def _generate_byeolji5(
+    def _generate_korean_format(
         self,
         scan: dict[str, Any],
         results: list[dict[str, Any]],
     ) -> str:
-        """Generate byeolji5 format report (Korean regulatory format).
+        """Generate Korean format report.
 
         This format is based on the Korean regulatory self-assessment form
         commonly used for algorithm fairness and compliance auditing.
@@ -96,7 +96,7 @@ class ReporterWorker:
 
         lines = [
             "=" * 60,
-            "알고리즘 공정성 자가평가서 (별지5 양식)",
+            "알고리즘 공정성 검증 보고서",
             "=" * 60,
             "",
             f"보고서 ID: {scan.get('id')}",
@@ -186,7 +186,7 @@ class ReporterWorker:
 
             # Generate reports in both formats
             markdown = self._generate_markdown(scan, results)
-            byeolji5 = self._generate_byeolji5(scan, results)
+            korean_format = self._generate_korean_format(scan, results)
 
             # Save to file
             report_path = self._save_report(scan_id, markdown)
