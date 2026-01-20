@@ -150,3 +150,16 @@ class ScanStore:
             .execute()
         )
         return response.count or 0
+
+    def get_compliance_items(self, document_ids: Iterable[str]) -> list[dict[str, Any]]:
+        """Get compliance items for given documents."""
+        ids = list(document_ids)
+        if not ids:
+            return []
+        response = (
+            self.client.table("compliance_items")
+            .select("id, document_id, item_text, item_type, section, page")
+            .in_("document_id", ids)
+            .execute()
+        )
+        return response.data or []
