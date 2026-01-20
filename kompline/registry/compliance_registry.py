@@ -1,5 +1,6 @@
 """Compliance Registry for managing compliance definitions."""
 
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -38,6 +39,14 @@ class ComplianceRegistry:
         """
         if compliance.id in self._compliances:
             raise ValueError(f"Compliance '{compliance.id}' already registered")
+        self._compliances[compliance.id] = compliance
+
+    def register_or_update(self, compliance: Compliance) -> None:
+        """Register or update a compliance framework.
+
+        Args:
+            compliance: The compliance framework to register or update.
+        """
         self._compliances[compliance.id] = compliance
 
     def get(self, compliance_id: str) -> Compliance | None:
@@ -198,6 +207,93 @@ class ComplianceRegistry:
             effective_date=data.get("effective_date"),
             metadata=data.get("metadata", {}),
         )
+
+    async def load_from_supabase(
+        self,
+        document_id: int | None = None,
+        item_type: str | None = None,
+        language: str | None = None,
+        compliance_id: str | None = None,
+        compliance_name: str | None = None,
+    ) -> Compliance:
+        """Load compliance rules from Supabase database.
+
+        Args:
+            document_id: Filter by specific document.
+            item_type: Filter by item type (maps to category).
+            language: Filter by language ('ko', 'en').
+            compliance_id: ID for the created Compliance object.
+            compliance_name: Name for the created Compliance object.
+
+        Returns:
+            Compliance object with rules from database.
+
+        Raises:
+            ValueError: If no items found.
+        """
+        from kompline.providers.supabase_provider import SupabaseProvider
+
+        provider = SupabaseProvider()
+
+        if document_id:
+            rows = await provider.fetch_items_by_document(document_id, language)
+        elif item_type:
+            rows = await provider.fetch_items_by_type(item_type, language)
+        else:
+            rows = await provider.fetch_all_items(language)
+
+        if not rows:
+            raise ValueError("No compliance items found matching criteria")
+
+        rules = provider.map_rows_to_rules(rows)
+        first_row = rows[0]
+
+        compliance = Compliance(
+            id=compliance_id or f"supabase-{first_row.document_id}",
+            name=compliance_name or first_row.document_title or "Supabase Compliance",
+            version="db",
+            jurisdiction="KR",
+            scope=list({r.category.value for r in rules}),
+            rules=rules,
+            evidence_requirements=[],
+            report_template="default",
+            description=f"Loaded from Supabase: {first_row.document_title}",
+            metadata={
+                "source": "supabase",
+                "document_id": first_row.document_id,
+                "loaded_at": datetime.now().isoformat(),
+                "item_count": len(rules),
+            },
+        )
+
+        self.register_or_update(compliance)
+        return compliance
+
+    def load_from_supabase_sync(
+        self,
+        document_id: int | None = None,
+        item_type: str | None = None,
+        language: str | None = None,
+        compliance_id: str | None = None,
+        compliance_name: str | None = None,
+    ) -> Compliance:
+        """Synchronous wrapper for load_from_supabase."""
+        import asyncio
+
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            return loop.run_until_complete(
+                self.load_from_supabase(
+                    document_id=document_id,
+                    item_type=item_type,
+                    language=language,
+                    compliance_id=compliance_id,
+                    compliance_name=compliance_name,
+                )
+            )
+        finally:
+            loop.close()
 
     def __len__(self) -> int:
         return len(self._compliances)
