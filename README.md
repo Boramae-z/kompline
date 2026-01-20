@@ -23,6 +23,8 @@ Kompline은 코드·로그·데이터 등 기업 산출물을 상시 스캔해 �
 
 ## 아키텍처
 
+![Kompline Architecture](docs/architecture.svg)
+
 ```mermaid
 flowchart LR
   FE[Frontend (Next.js)];
